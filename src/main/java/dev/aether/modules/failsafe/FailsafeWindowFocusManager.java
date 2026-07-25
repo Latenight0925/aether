@@ -34,12 +34,20 @@ public final class FailsafeWindowFocusManager {
     }
 
     public static void bringWindowToFront() {
-        Minecraft client = Minecraft.getInstance();
         if (!AetherConfig.FAILSAFE_AUTO_ALT_TAB.get()) {
-            debug(client, "FailsafeWindowFocus: auto alt-tab disabled");
+            debug(Minecraft.getInstance(), "FailsafeWindowFocus: auto alt-tab disabled");
             return;
         }
+        focusWindowNow();
+    }
 
+    /**
+     * Focus/raise the game window unconditionally, ignoring the failsafe auto
+     * alt-tab toggle. Used by features (e.g. manual pest mode) that treat
+     * tabbing the player in as their own opt-in behaviour.
+     */
+    public static void focusWindowNow() {
+        Minecraft client = Minecraft.getInstance();
         if (client == null) {
             debug(null, "FailsafeWindowFocus: client is null");
             return;

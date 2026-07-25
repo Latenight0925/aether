@@ -457,6 +457,20 @@ public final class AetherConfig {
         public static final FloatEntry PEST_ABOVE_TARGET_PITCH_MAX = Config.floatVal("pestAboveTargetPitchMax", 40.0f)
                         .range(10.0f, 90.0f);
 
+        // -- MANUAL PEST MODE ------------------------------------------------------
+
+        public static final BooleanEntry MANUAL_PEST_MODE = Config.bool("manualPestMode", false);
+        public static final IntEntry MANUAL_PEST_THRESHOLD = Config.integer("manualPestThreshold", 1).range(1, 8);
+        public static final BooleanEntry MANUAL_PEST_TAB_IN = Config.bool("manualPestTabIn", true);
+        public static final BooleanEntry MANUAL_PEST_SET_SPAWN = Config.bool("manualPestSetSpawn", true);
+        public static final BooleanEntry MANUAL_PEST_SWAP_LOADOUT = Config.bool("manualPestSwapLoadout", true);
+        public static final IntEntry MANUAL_PEST_CONFIRM_DELAY_MS = Config.integer("manualPestConfirmDelayMs", 150)
+                        .range(0, 2000);
+        public static final IntEntry MANUAL_PEST_RESTART_DELAY_MS = Config.integer("manualPestRestartDelayMs", 150)
+                        .range(0, 2000);
+        public static final IntEntry MANUAL_PEST_COOLDOWN_SECONDS = Config.integer("manualPestCooldownSeconds", 6)
+                        .range(0, 30);
+
         // -- PEST EXCHANGE ---------------------------------------------------------
 
         public static final BooleanEntry AUTO_PEST_EXCHANGE = Config.bool("autoPestExchange", false);

@@ -20,6 +20,7 @@ import dev.aether.modules.inventorymanager.JunkManager;
 import dev.aether.modules.pathfinding.PathfindingManager;
 import dev.aether.modules.pathfinding.rotation.RotationExecutor;
 import dev.aether.modules.pest.DynamicPestsManager;
+import dev.aether.modules.pest.ManualPestManager;
 import dev.aether.modules.pest.PestManager;
 import dev.aether.modules.pest.helpers.AutoPestExchangeManager;
 import dev.aether.modules.pest.helpers.AutoSprayonatorManager;
@@ -130,6 +131,7 @@ public final class AetherAutomationTickHandler {
         PestBonusManager.updateFromTab();
         AutoPestExchangeManager.update();
         PestManager.update();
+        ManualPestManager.update();
         CropFeverManager.update();
         AutoSprayonatorManager.update();
         DynamicPestsManager.update();

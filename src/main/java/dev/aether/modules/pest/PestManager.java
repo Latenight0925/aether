@@ -117,6 +117,19 @@ public class PestManager {
         return new LinkedHashSet<>(parseTabList(client).infestedPlots);
     }
 
+    /**
+     * Raw pests-alive count from the current tab list. Returns -1 when the tab
+     * has no pests line (i.e. no pests). Unlike {@link #getEffectiveAliveCountNow}
+     * this is not blended with chat-predicted counts, so it drops back to 0/-1 as
+     * soon as the tab clears - which is what manual pest handling relies on.
+     */
+    public static int getTabAliveCountNow(Minecraft client) {
+        if (client == null || client.getConnection() == null || client.player == null) {
+            return -1;
+        }
+        return parseTabList(client).aliveCount;
+    }
+
     private static class TabListData {
         int aliveCount = -1;
         int cooldownSeconds = -1;
@@ -227,7 +240,12 @@ public class PestManager {
     public static void checkTabListForPests(Minecraft client, MacroState.State currentState) {
         if (client.getConnection() == null || client.player == null || !MacroStateManager.isMacroRunning())
             return;
-        if (!isPestDestroyerEnabled())
+        // Manual pest mode replaces only the automated navigate-and-kill with a manual
+        // kill; the pre-spawn prep loadout swap below still runs. So allow this method
+        // when either the destroyer or manual mode is on, and gate just the cleaning
+        // trigger on !manualMode further down.
+        boolean manualMode = AetherConfig.MANUAL_PEST_MODE.get();
+        if (!isPestDestroyerEnabled() && !manualMode)
             return;
 
         if (isCleaningInProgress
@@ -301,8 +319,9 @@ public class PestManager {
             return;
         }
 
-        // Check if cleaning should be triggered
-        if (isThresholdMet(effectiveAlive)) {
+        // Check if cleaning should be triggered. Manual mode never auto-cleans -
+        // ManualPestManager pauses for the player instead.
+        if (!manualMode && isThresholdMet(effectiveAlive)) {
             if (isPestReentryCooldownActive()) {
                 return;
             }
@@ -367,6 +386,9 @@ public class PestManager {
     }
 
     public static boolean startCleaningSequence(Minecraft client, String plot) {
+        if (AetherConfig.MANUAL_PEST_MODE.get()) {
+            return false;
+        }
         if (!claimCleaningTrigger()) {
             return false;
         }
@@ -382,6 +404,9 @@ public class PestManager {
     }
 
     public static boolean tryStartCleaningSequenceFromChat(Minecraft client, String requestedPlot, int spawnedCount) {
+        if (AetherConfig.MANUAL_PEST_MODE.get()) {
+            return false;
+        }
         if (!isPestDestroyerEnabled()
                 || client == null
                 || client.getConnection() == null
@@ -524,4 +549,3 @@ public class PestManager {
         lastCleaningProgressAtMs = 0L;
     }
 }
-

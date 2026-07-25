@@ -97,6 +97,61 @@ public final class PestManagerRegistryProvider extends AbstractModulesRegistryPr
                 .add(FarmingSettingsFactory.pestAboveAimPitchRangeSetting()));
 
         groups.add(SettingGroup.of(
+                        "Manual Pest Killing",
+                        "Tabs you in and pauses when pests spawn so you can kill them by hand, then warps to garden and restarts (overrides Pest Destroyer)",
+                        () -> AetherConfig.MANUAL_PEST_MODE.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_MODE.set(v);
+                            AetherConfig.save();
+                        })
+                .add(new SliderSetting("Detect Threshold", 1, 8,
+                        () -> (float) AetherConfig.MANUAL_PEST_THRESHOLD.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_THRESHOLD.set(Math.round(v));
+                            AetherConfig.save();
+                        })
+                        .withDecimals(0))
+                .add(new ToggleSetting("Tab In When Detected",
+                        () -> AetherConfig.MANUAL_PEST_TAB_IN.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_TAB_IN.set(v);
+                            AetherConfig.save();
+                        }))
+                .add(new ToggleSetting("Set Spawn on Detect",
+                        () -> AetherConfig.MANUAL_PEST_SET_SPAWN.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_SET_SPAWN.set(v);
+                            AetherConfig.save();
+                        }))
+                .add(new ToggleSetting("Auto Loadout Swap",
+                        () -> AetherConfig.MANUAL_PEST_SWAP_LOADOUT.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_SWAP_LOADOUT.set(v);
+                            AetherConfig.save();
+                        }))
+                .add(new SliderSetting("Resume Confirm Delay", 0, 2000,
+                        () -> (float) AetherConfig.MANUAL_PEST_CONFIRM_DELAY_MS.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_CONFIRM_DELAY_MS.set(Math.round(v));
+                            AetherConfig.save();
+                        })
+                        .withDecimals(0).withSuffix("ms"))
+                .add(new SliderSetting("Resume Restart Delay", 0, 2000,
+                        () -> (float) AetherConfig.MANUAL_PEST_RESTART_DELAY_MS.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_RESTART_DELAY_MS.set(Math.round(v));
+                            AetherConfig.save();
+                        })
+                        .withDecimals(0).withSuffix("ms"))
+                .add(new SliderSetting("Re-trigger Cooldown", 0, 30,
+                        () -> (float) AetherConfig.MANUAL_PEST_COOLDOWN_SECONDS.get(),
+                        v -> {
+                            AetherConfig.MANUAL_PEST_COOLDOWN_SECONDS.set(Math.round(v));
+                            AetherConfig.save();
+                        })
+                        .withDecimals(0).withSuffix("s")));
+
+        groups.add(SettingGroup.of(
                         "Disco Destination",
                         "Prioritizes a selected plot and holds position for disco pests",
                         () -> AetherConfig.PEST_DISCO_DESTINATION_MODE.get(),
