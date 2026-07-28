@@ -10,9 +10,12 @@ import dev.aether.modules.farming.UngrabMouse;
 import dev.aether.modules.performance.MuteManager;
 import dev.aether.modules.performance.PerformanceModeManager;
 import dev.aether.modules.pest.helpers.PestCompletionGuard;
+import dev.aether.modules.pest.helpers.PestDiscoDestinationManager;
 import dev.aether.util.ClientUtils;
 import dev.aether.util.WindowFocusHelper;
 import net.minecraft.client.Minecraft;
+
+import java.util.Set;
 
 /**
  * Manual implementation of the pest lifecycle's CLEANING stage. The shared
@@ -84,7 +87,7 @@ public final class ManualPestManager {
             return;
         }
 
-        if (currentPestCount(client) <= 0) {
+        if (shouldFinishForAliveCount(client, currentPestCount(client))) {
             if (!PestCompletionGuard.shouldAcceptFinishReading(waitingStartedAt, false)) {
                 if (clearedPestTabTicks == 0) {
                     ClientUtils.sendDebugMessage("Manual pest: ignoring clear tab reading during startup grace.");
@@ -141,5 +144,42 @@ public final class ManualPestManager {
             return rawTab;
         }
         return PestManager.getInfestedPlotsFromTab(client).isEmpty() ? 0 : 1;
+    }
+
+    private static boolean shouldFinishForAliveCount(Minecraft client, int aliveCount) {
+        if (aliveCount <= 0) {
+            return true;
+        }
+        if (!AetherConfig.LEAVE_ONE_PEST_ALIVE.get()) {
+            return false;
+        }
+
+        Set<String> infested = PestManager.getInfestedPlotsFromTab(client);
+        if (infested.isEmpty()) {
+            return isLeaveOneWhitelistedPlot(PestManager.currentInfestedPlot) && aliveCount <= 1;
+        }
+
+        int whitelistedPlots = 0;
+        for (String plot : infested) {
+            if (!isLeaveOneWhitelistedPlot(plot)) {
+                return false;
+            }
+            whitelistedPlots++;
+        }
+        return aliveCount <= whitelistedPlots;
+    }
+
+    private static boolean isLeaveOneWhitelistedPlot(String plot) {
+        String normalizedPlot = PestDiscoDestinationManager.normalizePlot(plot);
+        if (normalizedPlot.isEmpty() || normalizedPlot.equalsIgnoreCase("unknown")) {
+            return false;
+        }
+
+        for (String configuredPlot : AetherConfig.LEAVE_ONE_PEST_PLOTS.get()) {
+            if (PestDiscoDestinationManager.normalizePlot(configuredPlot).equals(normalizedPlot)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
