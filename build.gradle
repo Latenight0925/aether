@@ -50,6 +50,10 @@ dependencies {
     include "com.googlecode.soundlibs:tritonus-share:0.3.7.4"
     include "net.java.dev.jna:jna:5.17.0"
     include "net.java.dev.jna:jna-platform:5.17.0"
+
+    testImplementation platform("org.junit:junit-bom:5.14.3")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 def aetherTranslationRepoRawUrl = providers.gradleProperty('aetherTranslationRepoRawUrl')
@@ -128,6 +132,10 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
 }
 
 java {

@@ -72,11 +72,11 @@ public class RestartManager {
         }
 
         // Never interrupt active pest/visitor flows; wait until they finish naturally.
-        if (PestManager.isCleaningInProgress
-                || PestPrepSwapManager.isPrepSwapping
-                || PestReturnManager.isFinishingInProgress
-                || PestReturnManager.isReturnToLocationActive
-                || PestReturnManager.isReturningFromPestVisitor
+        if (PestManager.isCleaningInProgress()
+                || PestPrepSwapManager.isPrepSwapping()
+                || PestReturnManager.isFinishingInProgress()
+                || PestReturnManager.isReturnToLocationActive()
+                || PestReturnManager.isReturningFromPestVisitor()
                 || state == MacroState.State.CLEANING
                 || state == MacroState.State.SPRAYING
                 || state == MacroState.State.VISITING) {

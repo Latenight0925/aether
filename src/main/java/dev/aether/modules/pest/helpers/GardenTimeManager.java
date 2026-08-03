@@ -52,7 +52,9 @@ public final class GardenTimeManager {
         if (client == null || client.player == null || client.getConnection() == null) {
             return false;
         }
-
+        if (!client.isSameThread()) {
+            return PestClientThread.call(client, () -> sidebarContains(client, marker), false);
+        }
         for (String line : ClientUtils.getSidebarLines()) {
             if (line.indexOf(marker) >= 0) {
                 return true;
@@ -120,11 +122,12 @@ public final class GardenTimeManager {
         String expected = expectedFragment.toLowerCase();
 
         while (System.currentTimeMillis() < deadline) {
-            if (client.screen instanceof AbstractContainerScreen<?> screen) {
-                String title = screen.getTitle().getString().toLowerCase();
-                if (title.contains(expected)) {
-                    return true;
-                }
+            boolean open = PestClientThread.call(client,
+                    () -> client.screen instanceof AbstractContainerScreen<?> screen
+                            && screen.getTitle().getString().toLowerCase().contains(expected),
+                    false);
+            if (open) {
+                return true;
             }
 
             if (!MacroWorkerThread.sleep(50)) {

@@ -56,6 +56,9 @@ public final class AetherBootstrapHooks {
         default void renderFailsafeColourFlash() {
         }
 
+        default void renderPestEspTracerOverlay() {
+        }
+
         default void onUserInput() {
         }
 
@@ -242,6 +245,10 @@ public final class AetherBootstrapHooks {
 
     public static void renderFailsafeColourFlash() {
         hooks.renderFailsafeColourFlash();
+    }
+
+    public static void renderPestEspTracerOverlay() {
+        hooks.renderPestEspTracerOverlay();
     }
 
     public static void onUserInput() {

@@ -67,7 +67,7 @@ public final class PestLifecycleManager {
 
     public static boolean start(Minecraft client, String plot, int pestCount, int sessionId) {
         if (stage != Stage.IDLE
-                || PestManager.isCleaningInProgress
+                || PestManager.isCleaningInProgress()
                 || LoadoutManager.isSwappingLoadout) {
             PestManager.clearCleaningTriggerPending();
             return false;
@@ -77,7 +77,7 @@ public final class PestLifecycleManager {
         stage = Stage.PRE;
         ClientUtils.sendDebugMessage("Pest lifecycle: entering PRE stage for plot " + plot + ".");
         client.execute(() -> FarmingMacroManager.disable(client));
-        PestManager.isCleaningInProgress = true;
+        PestManager.setCleaningInProgress(true);
         PestManager.clearCleaningTriggerPending();
         LoadoutManager.shouldRestartFarmingAfterSwap = false;
         MacroStateManager.setCurrentState(MacroState.State.CLEANING);
@@ -114,8 +114,8 @@ public final class PestLifecycleManager {
     private static void startCleaningStage(Minecraft client, String plot, int pestCount, int sessionId,
             boolean manualMode) {
         if (stage != Stage.PRE
-                || sessionId != PestManager.currentPestSessionId
-                || !PestManager.isCleaningInProgress) {
+                || sessionId != PestManager.getCurrentPestSessionId()
+                || !PestManager.isCleaningInProgress()) {
             return;
         }
 
@@ -131,15 +131,15 @@ public final class PestLifecycleManager {
         }
 
         ClientUtils.sendMessage("\u00A76Starting Pest Cleaner script (" + plot + ")...", true);
-        if (PestBonusManager.isBonusInactive) {
+        if (PestBonusManager.isBonusInactive()) {
             ClientUtils.sendMessage("\u00A7dBonus is INACTIVE! Triggering Phillip reactivation...", true);
-            PestBonusManager.isReactivatingBonus = true;
+            PestBonusManager.beginReactivation();
         }
         client.execute(() -> PestDestroyer.start(client, plot));
     }
 
     private static void abortPreStage(Minecraft client, int sessionId) {
-        if (sessionId != PestManager.currentPestSessionId || stage != Stage.PRE) {
+        if (sessionId != PestManager.getCurrentPestSessionId() || stage != Stage.PRE) {
             return;
         }
 

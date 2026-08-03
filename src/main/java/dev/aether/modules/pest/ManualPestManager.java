@@ -44,6 +44,19 @@ public final class ManualPestManager {
         return phase != Phase.IDLE;
     }
 
+    public static void requestEarlyFinish(Minecraft client) {
+        if (client == null
+                || phase != Phase.WAITING
+                || !AetherConfig.MANUAL_PEST_MODE.get()
+                || MacroStateManager.getCurrentState() != MacroState.State.CLEANING
+                || !PestManager.isCleaningInProgress()) {
+            return;
+        }
+
+        ClientUtils.sendMessage("\u00A7eManual Pest Mode: early finish requested. Running pest post-actions.", false);
+        finishCleaningStage(client);
+    }
+
     public static boolean startCleaningStage(Minecraft client, int count) {
         if (!AetherConfig.MANUAL_PEST_MODE.get() || phase != Phase.IDLE) {
             return false;
@@ -82,7 +95,7 @@ public final class ManualPestManager {
     private static void tickWaiting(Minecraft client) {
         if (!MacroStateManager.isMacroRunning()
                 || MacroStateManager.getCurrentState() != MacroState.State.CLEANING
-                || !PestManager.isCleaningInProgress) {
+                || !PestManager.isCleaningInProgress()) {
             reset();
             return;
         }

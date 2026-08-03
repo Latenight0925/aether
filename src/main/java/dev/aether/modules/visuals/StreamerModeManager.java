@@ -14,7 +14,6 @@ public final class StreamerModeManager {
         AetherConfig.STREAMER_MODE.set(enabled);
         if (enabled) {
             FreecamManager.setEnabled(false);
-            PipManager.setEnabled(false);
             UngrabMouseManager.setEnabled(false);
         }
         AetherConfig.save();

@@ -14,8 +14,20 @@ public class PestBonusManager {
     private static final Pattern BONUS_INACTIVE_PATTERN = Pattern.compile("(?i)\\bbonus\\b.*\\binactive\\b");
     private static final Pattern BONUS_ACTIVE_PATTERN = Pattern.compile("(?i)\\bbonus\\b.*\\bactive\\b");
 
-    public static volatile boolean isBonusInactive = false;
-    public static volatile boolean isReactivatingBonus = false;
+    private static volatile boolean isBonusInactive = false;
+    private static volatile boolean isReactivatingBonus = false;
+
+    public static boolean isBonusInactive() {
+        return isBonusInactive;
+    }
+
+    public static void setBonusInactive(boolean inactive) {
+        isBonusInactive = inactive;
+    }
+
+    public static void beginReactivation() {
+        isReactivatingBonus = true;
+    }
 
     public static void resetState() {
         isBonusInactive = false;

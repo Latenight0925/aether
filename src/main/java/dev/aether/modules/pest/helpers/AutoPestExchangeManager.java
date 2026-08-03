@@ -35,7 +35,7 @@ public final class AutoPestExchangeManager {
     }
 
     public static long getBonusInactiveElapsedMs() {
-        if (!PestBonusManager.isBonusInactive || bonusInactiveSinceMs == 0L) {
+        if (!PestBonusManager.isBonusInactive() || bonusInactiveSinceMs == 0L) {
             return 0L;
         }
         return Math.max(0L, System.currentTimeMillis() - bonusInactiveSinceMs);
@@ -58,10 +58,10 @@ public final class AutoPestExchangeManager {
         if (!AetherConfig.AUTO_PEST_EXCHANGE.get()) {
             return false;
         }
-        if (running || PestExchangeManager.isExchanging) {
+        if (running || PestExchangeManager.isExchanging()) {
             return true;
         }
-        if (!PestBonusManager.isBonusInactive || !pendingTrigger) {
+        if (!PestBonusManager.isBonusInactive() || !pendingTrigger) {
             return false;
         }
         return isPendingTriggerReady(System.currentTimeMillis());
@@ -79,7 +79,7 @@ public final class AutoPestExchangeManager {
         }
 
         long now = System.currentTimeMillis();
-        if (!PestBonusManager.isBonusInactive) {
+        if (!PestBonusManager.isBonusInactive()) {
             bonusInactiveSinceMs = 0L;
             pendingTriggerReadyAtMs = 0L;
             sawBonusInactive = false;
@@ -112,10 +112,10 @@ public final class AutoPestExchangeManager {
         if (!AetherConfig.AUTO_PEST_EXCHANGE.get()) {
             return false;
         }
-        if (running || PestExchangeManager.isExchanging) {
+        if (running || PestExchangeManager.isExchanging()) {
             return true;
         }
-        if (PestManager.isCleaningInProgress) {
+        if (PestManager.isCleaningInProgress()) {
             return false;
         }
 
@@ -135,7 +135,7 @@ public final class AutoPestExchangeManager {
         }
 
         MacroStateManager.setCurrentState(MacroState.State.CLEANING);
-        PestManager.isCleaningInProgress = true;
+        PestManager.setCleaningInProgress(true);
         running = true;
         lastRunMs = now;
         // Keep the trigger armed until the bonus actually flips back to active.
@@ -154,7 +154,7 @@ public final class AutoPestExchangeManager {
                 return;
 
             MacroStateManager.setCurrentState(MacroState.State.CLEANING);
-            PestManager.isCleaningInProgress = true;
+            PestManager.setCleaningInProgress(true);
 
             msg(client, "\u00A7eBonus inactive detected. Running pest exchange...");
             client.execute(() -> FarmingMacroManager.disable(client));
@@ -173,7 +173,10 @@ public final class AutoPestExchangeManager {
             if (MacroWorkerThread.shouldAbortTask(client))
                 return;
 
-            PestExchangeManager.runExchangeBlocking(client);
+            boolean exchangeCompleted = PestExchangeManager.runExchangeBlocking(client);
+            if (exchangeCompleted) {
+                PestBonusManager.setBonusInactive(false);
+            }
 
             if (MacroWorkerThread.shouldAbortTask(client))
                 return;
@@ -202,7 +205,7 @@ public final class AutoPestExchangeManager {
             } else if (MacroStateManager.isMacroRunning() && !canResumeFarming) {
                 msg(client, "\u00A7cAuto pest exchange did not resume farming because garden warp failed.");
             }
-            PestManager.isCleaningInProgress = false;
+            PestManager.setCleaningInProgress(false);
             if (canResumeFarming && MacroStateManager.isMacroRunning()) {
                 msg(client, "\u00A7aAuto pest exchange finished. Resuming farming.");
             }

@@ -140,8 +140,8 @@ public class BookCombineManager {
 
     private static boolean isPriorityEventActive(Minecraft client) {
         return dev.aether.macro.MacroStateManager.getCurrentState() != dev.aether.macro.MacroState.State.FARMING
-                || PestManager.isCleaningInProgress
-                || PestPrepSwapManager.prepSwappedForCurrentPestCycle
+                || PestManager.isCleaningInProgress()
+                || PestPrepSwapManager.wasPrepSwappedForCurrentCycle()
                 || (AetherConfig.AUTO_VISITOR.get() && VisitorManager.getVisitorCount(client) >= AetherConfig.VISITOR_THRESHOLD.get())
                 || LoadoutManager.isSwappingLoadout
                 || AutoSellManager.isSelling

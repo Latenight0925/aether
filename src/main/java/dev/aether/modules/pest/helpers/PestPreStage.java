@@ -34,28 +34,20 @@ final class PestPreStage {
             }
         }
 
-        boolean deferLoadoutUntilAfterDiscoTeleport = PestDiscoDestinationManager.matchesPlot(plot);
-        if (!deferLoadoutUntilAfterDiscoTeleport && !swapToPestLoadout(client, sessionId)) {
+        if (!swapToPestLoadout(client, sessionId)) {
             return false;
         }
 
-        PestPrepSwapManager.prepSwappedForCurrentPestCycle = false;
+        PestPrepSwapManager.clearCycleState();
         if (!moveToTargetPlot(client, plot, sessionId)) {
             return false;
-        }
-
-        if (deferLoadoutUntilAfterDiscoTeleport) {
-            ClientUtils.sendDebugMessage("Disco destination active: restoring pest loadout after plot teleport.");
-            if (!swapToPestLoadout(client, sessionId)) {
-                return false;
-            }
         }
 
         return moveToRoofIfNeeded(client, plot, sessionId);
     }
 
     private static boolean moveToTargetPlot(Minecraft client, String plot, int sessionId) {
-        if (!PestDiscoDestinationManager.isUsablePlot(plot)) {
+        if (!PestPlotId.isUsable(plot)) {
             return !shouldAbort(client, sessionId);
         }
 
@@ -68,10 +60,8 @@ final class PestPreStage {
             alreadyOnPlot = chatMatch;
         }
 
-        boolean forcePlotTp = alreadyOnPlot && AetherConfig.PEST_PLOT_TP_FOR_CURRENT_PLOT.get();
-        if (alreadyOnPlot && PestDiscoDestinationManager.matchesPlot(plot)) {
-            forcePlotTp = true;
-        }
+        boolean forcePlotTp =
+                alreadyOnPlot && AetherConfig.PEST_PLOT_TP_FOR_CURRENT_PLOT.get();
 
         if (alreadyOnPlot && !forcePlotTp) {
             String source = chatMatch ? "chat" : "scoreboard";
@@ -149,7 +139,7 @@ final class PestPreStage {
 
     private static boolean shouldAbort(Minecraft client, int sessionId) {
         return MacroWorkerThread.shouldAbortTask(client)
-                || sessionId != PestManager.currentPestSessionId
-                || !PestManager.isCleaningInProgress;
+                || sessionId != PestManager.getCurrentPestSessionId()
+                || !PestManager.isCleaningInProgress();
     }
 }

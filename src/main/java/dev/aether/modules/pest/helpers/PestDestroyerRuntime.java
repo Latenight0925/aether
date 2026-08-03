@@ -1,7 +1,6 @@
 package dev.aether.modules.pest.helpers;
 
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -46,30 +45,102 @@ final class PestDestroyerRuntime {
     long lastRoofRescanAt = 0L;
     PestDestroyer.State roofAotvReturnState = null;
 
-    int etherwarpEntryAttempts = 0;
-    long etherwarpEntryClickAt = 0L;
-    long etherwarpEntryRetryAt = 0L;
-    boolean etherwarpEntryClicked = false;
-    Vec3 etherwarpEntryPredicted = null;
-    double etherwarpEntryPreX = Double.NaN;
-    double etherwarpEntryPreY = Double.NaN;
-    double etherwarpEntryPreZ = Double.NaN;
-    // Set when the etherwarp entry gives up, so the hold lock stops re-engaging
-    // and the run falls back to the normal destroyer.
-    boolean holdDestinationAbandoned = false;
-
     int zeroPestTabTicks = 0;
     int targetWithoutSkullTicks = 0;
 
     final PestNavigationState navigation = new PestNavigationState();
 
-    void resetEtherwarpEntry() {
-        etherwarpEntryClickAt = 0L;
-        etherwarpEntryRetryAt = 0L;
-        etherwarpEntryClicked = false;
-        etherwarpEntryPredicted = null;
-        etherwarpEntryPreX = Double.NaN;
-        etherwarpEntryPreY = Double.NaN;
-        etherwarpEntryPreZ = Double.NaN;
+    void beginRun(int detectedVacuumSlot, long now) {
+        active = true;
+        state = PestDestroyer.State.IDLE;
+        stateEnteredAt = now;
+        activatedAt = now;
+        currentTarget = null;
+        killedEntities.clear();
+        pestTargetQueue.clear();
+        accountedKilledPestEntityIds.clear();
+        vacuumSlot = detectedVacuumSlot;
+        vacuumRange = 7.5f;
+        resetTransientState();
+        navigation.resetForRun();
+    }
+
+    void stopRun() {
+        active = false;
+        state = PestDestroyer.State.IDLE;
+        currentTarget = null;
+        killedEntities.clear();
+        pestTargetQueue.clear();
+        accountedKilledPestEntityIds.clear();
+        targetWithoutSkullTicks = 0;
+        navigation.resetForRun();
+        resetTransientState();
+    }
+
+    void resetAll() {
+        stopRun();
+        lastPreRotateAt = 0L;
+    }
+
+    void transitionTo(PestDestroyer.State newState, long now) {
+        state = newState;
+        stateEnteredAt = now;
+        stuckTicks = 0;
+        approachTicks = 0;
+        flyRetryAfterUnflyAt = 0L;
+        if (newState == PestDestroyer.State.CHECK_NEXT
+                || newState == PestDestroyer.State.FINISH
+                || newState == PestDestroyer.State.IDLE) {
+            arrivedAtCurrentTargetViaAotv = false;
+        }
+        if (newState != PestDestroyer.State.GET_LOCATION) {
+            navigation.isCapturingFirework = false;
+            navigation.fireworkCaptureStartedAt = 0L;
+        }
+        if (newState != PestDestroyer.State.AOTV_BETWEEN_PESTS) {
+            aotvLastUseAt = 0L;
+            aotvNextUseAt = 0L;
+            aotvPostClickGraceUntil = 0L;
+            aotvPendingUseAt = 0L;
+            aotvLastUsePlayerX = Double.NaN;
+            aotvLastUsePlayerY = Double.NaN;
+            aotvLastUsePlayerZ = Double.NaN;
+        }
+        if (newState != PestDestroyer.State.KILL_PEST) {
+            targetWithoutSkullTicks = 0;
+            lastPreRotateAt = 0L;
+            resetKillVacuumRetry();
+        }
+    }
+
+    void resetKillVacuumRetry() {
+        killVacuumHoldStartedAt = 0L;
+        killVacuumRetryPressAt = 0L;
+        killVacuumReleaseUntil = 0L;
+    }
+
+    private void resetTransientState() {
+        stuckTicks = 0;
+        approachTicks = 0;
+        zeroPestTabTicks = 0;
+        targetWithoutSkullTicks = 0;
+        lastVacuumUseAt = 0L;
+        flyRetryAfterUnflyAt = 0L;
+        killVacuumHoldStartedAt = 0L;
+        killVacuumRetryPressAt = 0L;
+        killVacuumReleaseUntil = 0L;
+        aotvSlot = -1;
+        aotvUseCount = 0;
+        aotvLastUseAt = 0L;
+        aotvNextUseAt = 0L;
+        aotvPostClickGraceUntil = 0L;
+        aotvPendingUseAt = 0L;
+        aotvLastUsePlayerX = Double.NaN;
+        aotvLastUsePlayerY = Double.NaN;
+        aotvLastUsePlayerZ = Double.NaN;
+        arrivedAtCurrentTargetViaAotv = false;
+        aotvStartY = Double.NaN;
+        lastRoofRescanAt = 0L;
+        roofAotvReturnState = null;
     }
 }

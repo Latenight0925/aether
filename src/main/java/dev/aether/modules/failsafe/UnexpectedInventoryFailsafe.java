@@ -138,8 +138,8 @@ final class UnexpectedInventoryFailsafe {
 
     private static boolean isExpectedInventoryGuiOpen() {
         return LoadoutManager.isSwappingLoadout
-                || PestExchangeManager.isExchanging
-                || PestTrapManager.isRunning
+                || PestExchangeManager.isExchanging()
+                || PestTrapManager.isRunning()
                 || ComposterManager.isRunning()
                 || SupercraftManager.isRunning()
                 || BookCombineManager.isPreparingToCombine

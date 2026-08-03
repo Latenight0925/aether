@@ -1,11 +1,14 @@
 package dev.aether.ui.providers.modules;
 
+import dev.aether.bootstrap.AetherKeybindRegistry;
 import dev.aether.config.AetherConfig;
 import dev.aether.modules.failsafe.FailsafeSoundManager;
 import dev.aether.notification.NotificationManager;
 import dev.aether.ui.MainGUIRegistry;
 import dev.aether.ui.providers.base.AbstractModulesRegistryProvider;
+import dev.aether.ui.settings.ColorSetting;
 import dev.aether.ui.settings.DropdownSetting;
+import dev.aether.ui.settings.KeybindSetting;
 import dev.aether.ui.settings.ListSetting;
 import dev.aether.ui.settings.ModulesTab;
 import dev.aether.ui.settings.PositionSetting;
@@ -29,6 +32,41 @@ public final class PestManagerRegistryProvider extends AbstractModulesRegistryPr
         List<String> sprayMaterials = FarmingSettingsFactory.sprayMaterials();
         List<String> manualPestSoundOptions = getSoundOptions();
         List<SettingGroup> groups = new ArrayList<>();
+
+        groups.add(SettingGroup.of(
+                        "Pest ESP",
+                        "Highlights and traces pests in the Garden",
+                        AetherConfig.PEST_ESP_ENABLED::get,
+                        value -> {
+                            AetherConfig.PEST_ESP_ENABLED.set(value);
+                            AetherConfig.save();
+                        })
+                .add(new ToggleSetting("Highlight",
+                        AetherConfig.PEST_ESP_HIGHLIGHT::get,
+                        value -> {
+                            AetherConfig.PEST_ESP_HIGHLIGHT.set(value);
+                            AetherConfig.save();
+                        }))
+                .add(new ColorSetting("Highlight Color",
+                        AetherConfig.PEST_ESP_HIGHLIGHT_COLOR::get,
+                        value -> {
+                            AetherConfig.PEST_ESP_HIGHLIGHT_COLOR.set(value);
+                            AetherConfig.save();
+                        })
+                        .visibleWhen(AetherConfig.PEST_ESP_HIGHLIGHT::get))
+                .add(new ToggleSetting("Tracer",
+                        AetherConfig.PEST_ESP_TRACER::get,
+                        value -> {
+                            AetherConfig.PEST_ESP_TRACER.set(value);
+                            AetherConfig.save();
+                        }))
+                .add(new ColorSetting("Tracer Color",
+                        AetherConfig.PEST_ESP_TRACER_COLOR::get,
+                        value -> {
+                            AetherConfig.PEST_ESP_TRACER_COLOR.set(value);
+                            AetherConfig.save();
+                        })
+                        .visibleWhen(AetherConfig.PEST_ESP_TRACER::get)));
 
         groups.add(SettingGroup.of(
                         "Pest Destroyer",
@@ -152,37 +190,9 @@ public final class PestManagerRegistryProvider extends AbstractModulesRegistryPr
                             AetherConfig.save();
                         })
                         .addIconAction("/assets/aether/icons/folder.svg", FailsafeSoundManager::openSoundFolder)
-                        .addIconAction("/assets/aether/icons/refresh.svg", () -> refreshSoundOptions(manualPestSoundOptions))));
-
-        groups.add(SettingGroup.of(
-                        "Disco Destination",
-                        "Prioritizes a selected plot and holds position for disco pests",
-                        () -> AetherConfig.PEST_DISCO_DESTINATION_MODE.get(),
-                        v -> {
-                            AetherConfig.PEST_DISCO_DESTINATION_MODE.set(v);
-                            AetherConfig.save();
-                        })
-                .add(new TextSetting("Disco Destination Plot", "Plot number (e.g. 5)",
-                        () -> AetherConfig.PEST_DISCO_DESTINATION_PLOT.get(),
-                        v -> {
-                            AetherConfig.PEST_DISCO_DESTINATION_PLOT.set(v);
-                            AetherConfig.save();
-                        })));
-
-        groups.add(SettingGroup.of(
-                        "Discoless Destination",
-                        "Plot TP to your farming plot, etherwarp once, then hold and vacuum",
-                        () -> AetherConfig.PEST_DISCOLESS_MODE.get(),
-                        v -> {
-                            AetherConfig.PEST_DISCOLESS_MODE.set(v);
-                            AetherConfig.save();
-                        })
-                .add(new ListSetting("Discoless Plot", "Add plot name",
-                        () -> AetherConfig.PEST_DISCOLESS_PLOT.get(),
-                        v -> {
-                        AetherConfig.PEST_DISCOLESS_PLOT.set(v);
-                        AetherConfig.save();
-                        })));
+                        .addIconAction("/assets/aether/icons/refresh.svg", () -> refreshSoundOptions(manualPestSoundOptions)))
+                .add(new KeybindSetting("Manual Pest Early Finish",
+                        AetherKeybindRegistry.getManualPestEarlyFinishKey())));
 
         groups.add(SettingGroup.of(
                         "AOTV to Roof",

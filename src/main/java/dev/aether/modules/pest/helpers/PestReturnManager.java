@@ -22,14 +22,58 @@ import dev.aether.modules.visitor.VisitorsMacro;
 import net.minecraft.client.Minecraft;
 
 public class PestReturnManager {
-    public static volatile boolean isReturningFromPestVisitor = false;
-    public static volatile boolean isReturnToLocationActive = false;
-    public static volatile boolean isStoppingFlight = false;
-    public static volatile boolean isFinishingInProgress = false;
+    private static volatile boolean isReturningFromPestVisitor = false;
+    private static volatile boolean isReturnToLocationActive = false;
+    private static volatile boolean isStoppingFlight = false;
+    private static volatile boolean isFinishingInProgress = false;
     private static volatile long finishingStartedAtMs = 0L;
     private static volatile String finishingStage = "idle";
-    public static int flightStopStage = 0;
-    public static int flightStopTicks = 0;
+    private static int flightStopStage = 0;
+    private static int flightStopTicks = 0;
+
+    public static boolean isReturningFromPestVisitor() {
+        return isReturningFromPestVisitor;
+    }
+
+    public static void setReturningFromPestVisitor(boolean returning) {
+        isReturningFromPestVisitor = returning;
+    }
+
+    public static boolean isReturnToLocationActive() {
+        return isReturnToLocationActive;
+    }
+
+    public static void setReturnToLocationActive(boolean active) {
+        isReturnToLocationActive = active;
+    }
+
+    public static boolean isFinishingInProgress() {
+        return isFinishingInProgress;
+    }
+
+    public static void updateFlightStop(Minecraft client) {
+        if (!isStoppingFlight || client == null || client.options == null) {
+            return;
+        }
+
+        flightStopTicks++;
+        boolean jumpDown = flightStopStage == 0 || flightStopStage == 2;
+        if (client.options.keyJump != null) {
+            ClientUtils.setKeyMappingState(client.options.keyJump, jumpDown);
+        }
+
+        int stageTicks = switch (flightStopStage) {
+            case 0, 2 -> 2;
+            case 1 -> 3;
+            default -> 0;
+        };
+        if (flightStopStage >= 3) {
+            isStoppingFlight = false;
+        } else if (flightStopTicks >= stageTicks) {
+            flightStopStage++;
+            flightStopTicks = 0;
+        }
+    }
 
     public static void resetState() {
         isReturningFromPestVisitor = false;
@@ -57,9 +101,8 @@ public class PestReturnManager {
     }
 
     private static void clearCleaningFlags() {
-        PestPrepSwapManager.isPrepSwapping = false;
-        PestPrepSwapManager.prepSwappedForCurrentPestCycle = false;
-        PestManager.isCleaningInProgress = false;
+        PestPrepSwapManager.clearCycleState();
+        PestManager.setCleaningInProgress(false);
         isReturningFromPestVisitor = false;
         isReturnToLocationActive = false;
     }
@@ -69,12 +112,6 @@ public class PestReturnManager {
         finishingStartedAtMs = 0L;
         finishingStage = "idle";
         PestLifecycleManager.completePostStage();
-    }
-
-    private static void runFinisherAsync(String threadName, Runnable task) {
-        Thread thread = new Thread(task, threadName);
-        thread.setDaemon(true);
-        thread.start();
     }
 
     private static boolean abortFinisherIfNeeded(Minecraft client, String stage) {
@@ -130,12 +167,19 @@ public class PestReturnManager {
         setFinishingStage("starting");
         ClientUtils.sendDebugMessage("Pest cleaning finished sequence started.");
         ClientUtils.sendMessage("Pest cleaning finished detected.", true);
-        runFinisherAsync("aether-pest-finish", () -> {
+        MacroWorkerThread.getInstance().submit("PestFinish-Initial", () -> {
             try {
                 setFinishingStage("initial checks");
                 if (abortFinisherIfNeeded(client, "initial finish")) {
                     return;
                 }
+                setFinishingStage("unfly");
+                ClientUtils.sendDebugMessage("Finisher: Stopping flight before post-actions...");
+                performUnfly(client);
+                if (abortFinisherIfNeeded(client, "unfly")) {
+                    return;
+                }
+
                 if (PestTrapManager.isBlockedByPestExchange()) {
                     ClientUtils.sendDebugMessage("Finisher: skipping trap clear/refill while pest exchange is active.");
                 } else if (PestManager.arePestTrapsEnabled()
@@ -143,14 +187,9 @@ public class PestReturnManager {
                         && !PestTrapManager.getFullTrapsFromTab(client).isEmpty()) {
                     setFinishingStage("clear traps");
                     ClientUtils.sendDebugMessage("Finisher: Clearing full pest traps...");
-                    PestTrapManager.start(client);
-                    try {
-                        while (PestTrapManager.isRunning && !MacroWorkerThread.shouldAbortTask(client)) {
-                            MacroWorkerThread.sleep(100);
-                        }
-                    } finally {
-                        PathfindingManager.stop();
-                    }
+                    PestTrapManager.runBlocking(client, AetherConfig.PEST_TRAPS_PLOT.get(),
+                            PestTrapManager.Operation.CLEAR);
+                    PathfindingManager.stop();
                     if (abortFinisherIfNeeded(client, "trap clear")) {
                         return;
                     }
@@ -162,14 +201,9 @@ public class PestReturnManager {
                         && !PestTrapManager.getNoBaitTrapsFromTab(client).isEmpty()) {
                     setFinishingStage("refill traps");
                     ClientUtils.sendDebugMessage("Finisher: Refilling empty pest traps...");
-                    PestTrapManager.startRefill(client);
-                    try {
-                        while (PestTrapManager.isRunning && !MacroWorkerThread.shouldAbortTask(client)) {
-                            MacroWorkerThread.sleep(100);
-                        }
-                    } finally {
-                        PathfindingManager.stop();
-                    }
+                    PestTrapManager.runBlocking(client, AetherConfig.PEST_TRAPS_PLOT.get(),
+                            PestTrapManager.Operation.REFILL);
+                    PathfindingManager.stop();
                     if (abortFinisherIfNeeded(client, "trap refill")) {
                         return;
                     }
@@ -222,7 +256,7 @@ public class PestReturnManager {
     }
 
     private static void continueAfterCleaningIntermediaries(Minecraft client) {
-        runFinisherAsync("aether-pest-finish-post", () -> {
+        MacroWorkerThread.getInstance().submit("PestFinish-Post", () -> {
             try {
                 setFinishingStage("post intermediaries");
                 if (abortFinisherIfNeeded(client, "post-intermediaries start")) {

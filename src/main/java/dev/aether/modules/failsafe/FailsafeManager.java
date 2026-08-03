@@ -130,6 +130,10 @@ public final class FailsafeManager {
         RotationFailsafe.syncExpectedRotationFromClient(client);
     }
 
+    public static void reportExternalRotation() {
+        RotationFailsafe.reportExternalRotation();
+    }
+
     public static void addRotationGracePeriod(long durationMs) {
         RotationFailsafe.addGracePeriod(durationMs);
     }

@@ -12,6 +12,7 @@
         "AccessorGlDevice",
         "AccessorGpuDevice",
         "AccessorKeyMapping",
+        "AccessorMouseHandler",
         "AccessorScreen",
         "AccessorWindow",
         "PlayerTabOverlayAccessor",

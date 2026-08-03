@@ -51,6 +51,12 @@ final class RotationFailsafe {
         triggered = false;
     }
 
+    static void reportExternalRotation() {
+        if (mismatchSince != 0L) return;
+        mismatchSince = System.currentTimeMillis();
+        mismatchRandomDelayMs = FailsafeManager.sampleAdditionalTriggerDelayMs();
+    }
+
     static void addGracePeriod(long durationMs) {
         if (durationMs <= 0L) return;
         long until = System.currentTimeMillis() + durationMs;
@@ -188,7 +194,6 @@ final class RotationFailsafe {
     static boolean shouldSuppressPestCleanerRotation(Minecraft client) {
         return client != null
                 && mismatchSince != 0L
-                && !RotationManager.isRotating()
                 && getState(client) == State.WAIT
                 && isPestCleanerActive()
                 && AetherConfig.FAILSAFE_ROTATION_TRIGGER_DURING_PEST_CLEANER.get();

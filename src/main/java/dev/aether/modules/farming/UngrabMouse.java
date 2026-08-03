@@ -33,7 +33,12 @@ public final class UngrabMouse {
     }
 
     public static boolean isMouseUngrabbed() {
-        return mouseUngrabbed && !isSuspended();
+        Minecraft mc = Minecraft.getInstance();
+        return mouseUngrabbed
+                && !isSuspended()
+                && mc.player != null
+                && mc.level != null
+                && mc.screen == null;
     }
 
     public static boolean isVisualUngrabEnabled() {

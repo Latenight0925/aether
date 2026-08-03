@@ -13,6 +13,7 @@ import dev.aether.modules.inventorymanager.AutoSellManager;
 import dev.aether.modules.inventorymanager.BookCombineManager;
 import dev.aether.modules.inventorymanager.GeorgeManager;
 import dev.aether.modules.inventorymanager.JunkManager;
+import dev.aether.modules.pest.ManualPestManager;
 import dev.aether.modules.pest.PestManager;
 import dev.aether.modules.profit.ProfitManager;
 import dev.aether.modules.session.DynamicRestManager;
@@ -61,6 +62,10 @@ public final class AetherKeybindHandler {
 
             while (AetherKeybindRegistry.getUngrabMouseKey().consumeClick()) {
                 UngrabMouseManager.toggle();
+            }
+
+            while (AetherKeybindRegistry.getManualPestEarlyFinishKey().consumeClick()) {
+                ManualPestManager.requestEarlyFinish(client);
             }
         });
     }

@@ -1,9 +1,5 @@
 package dev.aether.modules.pest;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import dev.aether.config.AetherConfig;
 import dev.aether.macro.farming.FarmingMacroManager;
 import dev.aether.macro.MacroState;
@@ -26,7 +22,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -46,7 +41,6 @@ public final class DynamicPestsManager {
 
     // Feast state
     private static volatile List<String> feastActiveCrops = List.of();
-    private static volatile java.util.Map<String, Long> feastNextCropTimestamps = java.util.Map.of();
     private static volatile long feastNextFetchMs = 0L;
     private static volatile boolean feastActive = false;
     private static volatile boolean feastFetchInProgress = false;
@@ -117,13 +111,13 @@ public final class DynamicPestsManager {
 
         String normalizedCrop = normalizeRequestedCrop(cropName);
         if (normalizedCrop == null) return false;
-        if (isApplying || PestManager.isCleaningInProgress || AutoSprayonatorManager.isRunning()) return false;
+        if (isApplying || PestManager.isCleaningInProgress() || AutoSprayonatorManager.isRunning()) return false;
 
         isApplying = true;
         MacroWorkerThread.getInstance().submit("DynamicPests-TestApply", () -> {
             try {
                 if (shouldAbortApply(client, false)) return;
-                if (PestManager.isCleaningInProgress) return;
+                if (PestManager.isCleaningInProgress()) return;
                 if (AutoSprayonatorManager.isRunning()) return;
                 if (doApply(client, normalizedCrop, true, false)) {
                     appliedCrop = normalizedCrop;
@@ -146,84 +140,31 @@ public final class DynamicPestsManager {
         if (System.currentTimeMillis() < feastNextFetchMs) return;
 
         feastFetchInProgress = true;
-        Thread t = new Thread(() -> {
-            try {
-                fetchFeast();
-            } finally {
-                feastInitialFetchComplete = true;
-                feastFetchInProgress = false;
-            }
-        }, "aether-feast-fetch");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private static void fetchFeast() {
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(FEAST_API_URL))
-                    .timeout(Duration.ofSeconds(10))
-                    .header("User-Agent", "Mozilla/5.0")
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                feastNextFetchMs = System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS;
-                return;
-            }
-
-            parseFeastResponse(JsonParser.parseString(response.body()).getAsJsonObject());
-        } catch (Exception e) {
-            feastNextFetchMs = System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS;
-        }
-    }
-
-    private static void parseFeastResponse(JsonObject json) {
-        boolean complete = json.has("complete") && json.get("complete").getAsBoolean();
-        JsonArray currentArr = json.has("current") ? json.getAsJsonArray("current") : null;
-
-        if (!complete || currentArr == null || currentArr.isEmpty()) {
-            feastActive = false;
-            feastActiveCrops = List.of();
-            feastNextCropTimestamps = java.util.Map.of();
-            feastNextFetchMs = System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS;
-            return;
-        }
-
-        List<String> crops = new ArrayList<>(3);
-        for (JsonElement el : currentArr) {
-            crops.add(normalizeApiCrop(el.getAsString()));
-        }
-        feastActiveCrops = List.copyOf(crops);
-        feastActive = true;
-
-        // Schedule next fetch at the earliest upcoming crop rotation
-        long earliestMs = Long.MAX_VALUE;
-        var nextMap = new java.util.LinkedHashMap<String, Long>();
-        if (json.has("next")) {
-            for (java.util.Map.Entry<String, JsonElement> entry : json.getAsJsonObject("next").entrySet()) {
-                if (entry.getValue().isJsonNull()) continue;
-                long tsMs = entry.getValue().getAsLong() * 1000L;
-                nextMap.put(normalizeApiCrop(entry.getKey()), tsMs);
-                if (tsMs > System.currentTimeMillis() && tsMs < earliestMs) {
-                    earliestMs = tsMs;
-                }
-            }
-        }
-        feastNextCropTimestamps = java.util.Collections.unmodifiableMap(nextMap);
-
-        feastNextFetchMs = earliestMs == Long.MAX_VALUE
-                ? System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS
-                : earliestMs;
-    }
-
-    private static String normalizeApiCrop(String apiCrop) {
-        return switch (apiCrop) {
-            case "Melon" -> "Melon Slice";
-            case "Mushroom" -> "Mushrooms";
-            default -> apiCrop;
-        };
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(FEAST_API_URL))
+                .timeout(Duration.ofSeconds(10))
+                .header("User-Agent", "Mozilla/5.0")
+                .GET()
+                .build();
+        HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .whenComplete((response, error) -> {
+                    try {
+                        if (error != null || response == null || response.statusCode() != 200) {
+                            feastNextFetchMs = System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS;
+                            return;
+                        }
+                        HarvestFeastSnapshot snapshot = HarvestFeastSnapshot.parse(
+                                response.body(), System.currentTimeMillis(), FEAST_FALLBACK_POLL_MS);
+                        feastActive = snapshot.active();
+                        feastActiveCrops = snapshot.activeCrops();
+                        feastNextFetchMs = snapshot.nextFetchMs();
+                    } catch (Exception parseError) {
+                        feastNextFetchMs = System.currentTimeMillis() + FEAST_FALLBACK_POLL_MS;
+                    } finally {
+                        feastInitialFetchComplete = true;
+                        feastFetchInProgress = false;
+                    }
+                });
     }
 
     // -------------------------------------------------------------------------
@@ -253,36 +194,11 @@ public final class DynamicPestsManager {
         if (now - lastJacobParseMs < 5000L) return;
         lastJacobParseMs = now;
 
-        List<String> crops = parseJacobFromTablist(client);
+        List<String> crops = DynamicPestPolicy.parseContestCrops(TablistUtils.getRawTabLines(client));
         if (!crops.isEmpty()) {
             jacobContestCrops = List.copyOf(crops);
             jacobParsed = true;
         }
-    }
-
-    private static List<String> parseJacobFromTablist(Minecraft client) {
-        List<String> lines = TablistUtils.getRawTabLines(client);
-        List<String> crops = new ArrayList<>();
-
-        for (String raw : lines) {
-            String line = raw.trim();
-            if (!line.startsWith("○ ") && !line.startsWith("☘ ")) continue;
-            String name = line.substring(2).trim();
-            String normalized = normalizeCropName(name);
-            if (PestCropData.BY_CROP.containsKey(normalized)) {
-                crops.add(normalized);
-            }
-        }
-
-        return crops;
-    }
-
-    private static String normalizeCropName(String name) {
-        return switch (name) {
-            case "Mushroom"   -> "Mushrooms";
-            case "Melon"      -> "Melon Slice";
-            default           -> name;
-        };
     }
 
     // -------------------------------------------------------------------------
@@ -290,27 +206,13 @@ public final class DynamicPestsManager {
     // -------------------------------------------------------------------------
 
     private static String resolveTargetCrop() {
-        int mode = AetherConfig.DYNAMIC_PESTS_MODE.get();
-        boolean jacobActive = !jacobContestCrops.isEmpty();
-
-        return switch (mode) {
-            case 0 -> feastActive
-                    ? highestPriority(feastActiveCrops, AetherConfig.DYNAMIC_PESTS_FEAST_PRIORITY.get())
-                    : null;
-            case 1 -> jacobActive
-                    ? highestPriority(jacobContestCrops, AetherConfig.DYNAMIC_PESTS_CONTEST_PRIORITY.get())
-                    : null;
-            case 2 -> {
-                if (jacobActive) {
-                    String jacobCrop = highestPriority(jacobContestCrops, AetherConfig.DYNAMIC_PESTS_CONTEST_PRIORITY.get());
-                    if (jacobCrop != null) yield jacobCrop;
-                }
-                yield feastActive
-                        ? highestPriority(feastActiveCrops, AetherConfig.DYNAMIC_PESTS_FEAST_PRIORITY.get())
-                        : null;
-            }
-            default -> null;
-        };
+        return DynamicPestPolicy.resolve(
+                AetherConfig.DYNAMIC_PESTS_MODE.get(),
+                feastActive,
+                feastActiveCrops,
+                AetherConfig.DYNAMIC_PESTS_FEAST_PRIORITY.get(),
+                jacobContestCrops,
+                AetherConfig.DYNAMIC_PESTS_CONTEST_PRIORITY.get());
     }
 
     private static boolean shouldWaitForInitialFeastFetch() {
@@ -320,17 +222,6 @@ public final class DynamicPestsManager {
 
         int mode = AetherConfig.DYNAMIC_PESTS_MODE.get();
         return mode == 0 || (mode == 2 && jacobContestCrops.isEmpty());
-    }
-
-    private static String highestPriority(List<String> eventCrops, List<String> priorityList) {
-        if (eventCrops == null || eventCrops.isEmpty()) return null;
-        if (priorityList == null || priorityList.isEmpty()) return eventCrops.get(0);
-
-        for (String crop : priorityList) {
-            if (eventCrops.contains(crop)) return crop;
-        }
-        // no configured priority matched an active crop; still target an active one
-        return eventCrops.get(0);
     }
 
     private static String normalizeRequestedCrop(String cropName) {
@@ -355,7 +246,7 @@ public final class DynamicPestsManager {
         if (!NOT_APPLIED.equals(appliedCrop) && Objects.equals(targetKey, appliedCrop)) return;
         if (isApplying) return;
         if (MacroStateManager.getCurrentState() != MacroState.State.FARMING) return;
-        if (PestManager.isCleaningInProgress) return;
+        if (PestManager.isCleaningInProgress()) return;
         if (AutoSprayonatorManager.isRunning()) return;
 
         isApplying = true;
@@ -363,7 +254,7 @@ public final class DynamicPestsManager {
             try {
                 // Re-check all guards at task start — state may have changed since enqueue
                 if (MacroWorkerThread.shouldAbortTask(client, MacroState.State.FARMING)) return;
-                if (PestManager.isCleaningInProgress) return;
+                if (PestManager.isCleaningInProgress()) return;
                 if (AutoSprayonatorManager.isRunning()) return;
                 if (doApply(client, targetCrop, false, true)) {
                     appliedCrop = targetKey;
@@ -408,7 +299,7 @@ public final class DynamicPestsManager {
         MacroState.State previousState = MacroStateManager.getCurrentState();
         boolean macroWasRunning = MacroStateManager.isMacroRunning();
 
-        PestManager.isCleaningInProgress = true;
+        PestManager.setCleaningInProgress(true);
         if (macroWasRunning) {
             MacroStateManager.setCurrentState(MacroState.State.SPRAYING);
             client.execute(() -> FarmingMacroManager.disable(client));
@@ -482,7 +373,7 @@ public final class DynamicPestsManager {
             } else if (MacroStateManager.getCurrentState() != previousState) {
                 MacroStateManager.setCurrentState(previousState);
             }
-            PestManager.isCleaningInProgress = false;
+            PestManager.setCleaningInProgress(false);
         }
     }
 

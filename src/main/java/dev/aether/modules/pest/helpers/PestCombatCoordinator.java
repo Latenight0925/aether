@@ -20,45 +20,48 @@ final class PestCombatCoordinator {
     private static final float AOTV_AIM_TOLERANCE_DEGREES = 2.0f;
     private static final double POST_AOTV_LOOK_DOWN_HORIZONTAL_DISTANCE = 3.0;
     private static final double VACUUM_REAPPROACH_BUFFER = 6.0;
+    private static final double TARGET_REACQUIRE_CONE_DEGREES = 120.0;
     private static final double S_BRAKE_ENTER_DISTANCE = 2.0;
     private static final double S_BRAKE_EXIT_DISTANCE = 4.0;
     private static final double S_BRAKE_MIN_SPEED = 0.20;
     private static final double KILL_FORWARD_HOLD_DISTANCE = 5.0;
     interface Context {
-        Entity getCurrentTarget();
-        int getVacuumSlot();
-        void setVacuumSlot(int slot);
-        double getVacuumRange();
-        int getAotvSlot();
-        void setAotvSlot(int slot);
-        int getAotvUseCount();
-        void setAotvUseCount(int useCount);
-        long getAotvLastUseAt();
-        void setAotvLastUseAt(long lastUseAt);
-        long getAotvNextUseAt();
-        void setAotvNextUseAt(long nextUseAt);
-        long getAotvPostClickGraceUntil();
-        void setAotvPostClickGraceUntil(long graceUntil);
-        long getAotvPendingUseAt();
-        void setAotvPendingUseAt(long pendingUseAt);
-        double getAotvLastUsePlayerX();
-        void setAotvLastUsePlayerX(double x);
-        double getAotvLastUsePlayerY();
-        void setAotvLastUsePlayerY(double y);
-        double getAotvLastUsePlayerZ();
-        void setAotvLastUsePlayerZ(double z);
-        boolean didArriveAtCurrentTargetViaAotv();
-        void setArrivedAtCurrentTargetViaAotv(boolean arrived);
-        long getStateEnteredAt();
-        void setStateEnteredAt(long enteredAt);
-        int getStuckTicks();
-        void setStuckTicks(int stuckTicks);
-        long getFlyRetryAfterUnflyAt();
-        void setFlyRetryAfterUnflyAt(long retryAt);
-        int getApproachTicks();
-        void setApproachTicks(int approachTicks);
-        int getTargetWithoutSkullTicks();
-        void setTargetWithoutSkullTicks(int targetWithoutSkullTicks);
+        PestDestroyerRuntime runtime();
+
+        default Entity getCurrentTarget() { return runtime().currentTarget; }
+        default int getVacuumSlot() { return runtime().vacuumSlot; }
+        default void setVacuumSlot(int slot) { runtime().vacuumSlot = slot; }
+        default double getVacuumRange() { return runtime().vacuumRange; }
+        default int getAotvSlot() { return runtime().aotvSlot; }
+        default void setAotvSlot(int slot) { runtime().aotvSlot = slot; }
+        default int getAotvUseCount() { return runtime().aotvUseCount; }
+        default void setAotvUseCount(int count) { runtime().aotvUseCount = count; }
+        default long getAotvLastUseAt() { return runtime().aotvLastUseAt; }
+        default void setAotvLastUseAt(long value) { runtime().aotvLastUseAt = value; }
+        default long getAotvNextUseAt() { return runtime().aotvNextUseAt; }
+        default void setAotvNextUseAt(long value) { runtime().aotvNextUseAt = value; }
+        default long getAotvPostClickGraceUntil() { return runtime().aotvPostClickGraceUntil; }
+        default void setAotvPostClickGraceUntil(long value) { runtime().aotvPostClickGraceUntil = value; }
+        default long getAotvPendingUseAt() { return runtime().aotvPendingUseAt; }
+        default void setAotvPendingUseAt(long value) { runtime().aotvPendingUseAt = value; }
+        default double getAotvLastUsePlayerX() { return runtime().aotvLastUsePlayerX; }
+        default void setAotvLastUsePlayerX(double value) { runtime().aotvLastUsePlayerX = value; }
+        default double getAotvLastUsePlayerY() { return runtime().aotvLastUsePlayerY; }
+        default void setAotvLastUsePlayerY(double value) { runtime().aotvLastUsePlayerY = value; }
+        default double getAotvLastUsePlayerZ() { return runtime().aotvLastUsePlayerZ; }
+        default void setAotvLastUsePlayerZ(double value) { runtime().aotvLastUsePlayerZ = value; }
+        default boolean didArriveAtCurrentTargetViaAotv() { return runtime().arrivedAtCurrentTargetViaAotv; }
+        default void setArrivedAtCurrentTargetViaAotv(boolean value) { runtime().arrivedAtCurrentTargetViaAotv = value; }
+        default long getStateEnteredAt() { return runtime().stateEnteredAt; }
+        default void setStateEnteredAt(long value) { runtime().stateEnteredAt = value; }
+        default int getStuckTicks() { return runtime().stuckTicks; }
+        default void setStuckTicks(int value) { runtime().stuckTicks = value; }
+        default long getFlyRetryAfterUnflyAt() { return runtime().flyRetryAfterUnflyAt; }
+        default void setFlyRetryAfterUnflyAt(long value) { runtime().flyRetryAfterUnflyAt = value; }
+        default int getApproachTicks() { return runtime().approachTicks; }
+        default void setApproachTicks(int value) { runtime().approachTicks = value; }
+        default int getTargetWithoutSkullTicks() { return runtime().targetWithoutSkullTicks; }
+        default void setTargetWithoutSkullTicks(int value) { runtime().targetWithoutSkullTicks = value; }
         boolean isLookingAt(Minecraft client, Vec3 targetPos, float tolerance);
         void setState(PestDestroyer.State state);
         void startPathToPest(Minecraft client, Entity pest);
@@ -67,6 +70,9 @@ final class PestCombatCoordinator {
         void maybePreMoveToNextTarget(Minecraft client, Entity nextTarget, double currentDist);
         boolean hasPestSkullMarkerForTarget(Minecraft client, Entity target);
         void markKilled(Entity entity);
+        boolean recordTrackedPestKill(Minecraft client, Entity entity);
+        boolean shouldTemporarilyReleaseKillVacuum(
+                Minecraft client, boolean vacuumReady, boolean targetInRange);
         int findVacuumHotbarSlot(Minecraft client);
         int findAotvHotbarSlot(Minecraft client);
     }
@@ -183,13 +189,30 @@ final class PestCombatCoordinator {
         if (currentTarget == null || currentTarget.isRemoved() || (currentTarget instanceof LivingEntity le && le.isDeadOrDying())) {
             ClientUtils.setKeyMappingState(client.options.keyUse, false);
             if (currentTarget != null && (currentTarget.isRemoved() || (currentTarget instanceof LivingEntity le2 && le2.isDeadOrDying()))) {
-                PestDestroyer.recordTrackedPestKill(client, currentTarget);
+                context.recordTrackedPestKill(client, currentTarget);
             }
             context.setState(PestDestroyer.State.CHECK_NEXT);
             return;
         }
 
         if (client.player == null) {
+            return;
+        }
+
+        // If we pass the pest, it can remain inside the vacuum re-approach
+        // buffer while sitting behind us. This is an orientation problem, not
+        // a navigation problem: a path to a nearby target can complete without
+        // moving and bounce KILL_PEST <-> APPROACH_PEST forever.
+        if (isOutsideForwardCone(client, currentTarget, TARGET_REACQUIRE_CONE_DEGREES)) {
+            ClientUtils.setKeyMappingState(client.options.keyUse, false);
+            ClientUtils.setKeyMappingState(client.options.keyDown, false);
+            ClientUtils.setKeyMappingState(client.options.keyUp, false);
+            PathfindingManager.stop();
+            context.setTargetWithoutSkullTicks(0);
+            if (!FailsafeManager.shouldSuppressPestCleanerRotation(client)) {
+                RotationManager.forceRotation(client, buildCombatAimTarget(client, currentTarget), 120);
+            }
+            ClientUtils.sendDebugMessage("[PestDestroyer] Target moved behind forward cone. Turning to reacquire.");
             return;
         }
 
@@ -204,7 +227,8 @@ final class PestCombatCoordinator {
         }
 
         if (dist <= context.getVacuumRange()) {
-            boolean retryingUse = PestDestroyer.shouldTemporarilyReleaseKillVacuum(client, true, true);
+            boolean retryingUse =
+                    context.shouldTemporarilyReleaseKillVacuum(client, true, true);
             ClientUtils.setKeyMappingState(client.options.keyUse, !retryingUse);
             ClientUtils.setKeyMappingState(client.options.keyUp, dist > KILL_FORWARD_HOLD_DISTANCE);
 
@@ -231,7 +255,7 @@ final class PestCombatCoordinator {
                     ClientUtils.setKeyMappingState(client.options.keyUse, false);
                     ClientUtils.setKeyMappingState(client.options.keyDown, false);
                     context.markKilled(currentTarget);
-                    PestDestroyer.recordTrackedPestKill(client, currentTarget);
+                    context.recordTrackedPestKill(client, currentTarget);
                     ClientUtils.sendDebugMessage("[PestDestroyer] Pest skull disappeared. Switching target immediately.");
                     if (!context.switchToNextQueuedTarget(client)) {
                         context.setState(PestDestroyer.State.CHECK_NEXT);
@@ -242,7 +266,7 @@ final class PestCombatCoordinator {
                 context.setTargetWithoutSkullTicks(0);
             }
         } else {
-            PestDestroyer.shouldTemporarilyReleaseKillVacuum(client, true, false);
+            context.shouldTemporarilyReleaseKillVacuum(client, true, false);
             ClientUtils.setKeyMappingState(client.options.keyUse, false);
             ClientUtils.setKeyMappingState(client.options.keyDown, false);
             context.setTargetWithoutSkullTicks(0);
@@ -446,6 +470,19 @@ final class PestCombatCoordinator {
         return true;
     }
 
+    static boolean isOutsideForwardCone(Minecraft client, Entity target, double coneDegrees) {
+        if (client == null || client.player == null || target == null || coneDegrees <= 0.0) {
+            return false;
+        }
+        Vec3 toTarget = getEntityEyePosition(target).subtract(client.player.getEyePosition());
+        if (toTarget.lengthSqr() == 0.0) {
+            return false;
+        }
+        double dot = client.player.getViewVector(1.0F).normalize().dot(toTarget.normalize());
+        double threshold = Math.cos(Math.toRadians(coneDegrees));
+        return dot < threshold;
+    }
+
     private static Vec3 getEntityEyePosition(Entity entity) {
         return entity.position().add(0, entity.getEyeHeight(entity.getPose()), 0);
     }
@@ -500,15 +537,6 @@ final class PestCombatCoordinator {
     }
 
     private static float getAbovePestPitch(Entity target) {
-        float minPitch = AetherConfig.PEST_ABOVE_TARGET_PITCH_MIN.get();
-        float maxPitch = AetherConfig.PEST_ABOVE_TARGET_PITCH_MAX.get();
-        if (maxPitch < minPitch) {
-            float swap = minPitch;
-            minPitch = maxPitch;
-            maxPitch = swap;
-        }
-        float range = maxPitch - minPitch;
-        int bucket = Math.floorMod(target.getId(), (int) range + 1);
-        return maxPitch - bucket;
+        return PestPitchRange.configured().bucketFor(target.getId());
     }
 }

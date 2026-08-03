@@ -30,9 +30,6 @@ public final class PipManager {
 
     public static void setEnabled(boolean shouldEnable) {
         Minecraft client = Minecraft.getInstance();
-        if (shouldEnable && StreamerModeManager.isEnabled()) {
-            return;
-        }
         if (client == null) {
             enabled = false;
             appliedState = null;
@@ -63,12 +60,6 @@ public final class PipManager {
 
     public static void render() {
         Minecraft client = Minecraft.getInstance();
-        if (StreamerModeManager.isEnabled()) {
-            if (enabled) {
-                setEnabled(false);
-            }
-            return;
-        }
         if (enabled && client != null && client.isSameThread()) {
             applyPipMode(client);
         }

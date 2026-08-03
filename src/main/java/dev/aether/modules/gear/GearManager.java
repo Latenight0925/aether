@@ -44,7 +44,7 @@ public class GearManager {
     }
 
     public static void finalResume(Minecraft client) {
-        if (PestManager.isCleaningInProgress)
+        if (PestManager.isCleaningInProgress())
             return;
         if (AutoPestExchangeManager.shouldBlockFarmingResume()) {
             pendingFinalResumeRetries = 0;
@@ -55,7 +55,7 @@ public class GearManager {
         if (!hasAnyGearSwapTasksEnabled()) {
             pendingFinalResumeRetries = 0;
             client.execute(() -> {
-                if (PestManager.isCleaningInProgress)
+                if (PestManager.isCleaningInProgress())
                     return;
                 dev.aether.macro.MacroStateManager.setCurrentState(dev.aether.macro.MacroState.State.FARMING);
                 GearManager.swapToFarmingTool(client);
@@ -77,11 +77,11 @@ public class GearManager {
 
         pendingFinalResumeRetries = 0;
 
-        if (PestManager.isCleaningInProgress)
+        if (PestManager.isCleaningInProgress())
             return;
 
         client.execute(() -> {
-            if (PestManager.isCleaningInProgress)
+            if (PestManager.isCleaningInProgress())
                 return;
             dev.aether.macro.MacroStateManager.setCurrentState(dev.aether.macro.MacroState.State.FARMING);
             GearManager.swapToFarmingTool(client);
@@ -109,7 +109,7 @@ public class GearManager {
 
         MacroWorkerThread.getInstance().submit("GearManager-FinalResumeRetry-" + attempt, () -> {
             MacroWorkerThread.sleep(FINAL_RESUME_RETRY_DELAY_MS);
-            if (PestManager.isCleaningInProgress) {
+            if (PestManager.isCleaningInProgress()) {
                 return;
             }
             finalResume(client);

@@ -17,6 +17,7 @@ import dev.aether.modules.performance.MuteManager;
 import dev.aether.modules.performance.PerformanceModeManager;
 import dev.aether.modules.profit.ProfitManager;
 import dev.aether.modules.visuals.StreamerModeManager;
+import dev.aether.modules.visuals.PestEspManager;
 import dev.aether.notification.NotificationManager;
 import dev.aether.renderer.FunRenderer;
 import dev.aether.renderer.PositionHighlighter;
@@ -60,8 +61,9 @@ public final class ClientFeatureBootstrap {
 
             boolean drawPathVisualizer = PathVisualizer.shouldRender();
             boolean drawPositionHighlights = PositionHighlighter.hasVisibleHighlights();
+            boolean drawPestEsp = PestEspManager.hasVisibleHighlights();
             boolean drawFunEffects = FunRenderer.hasVisibleEffects();
-            if (!drawPathVisualizer && !drawPositionHighlights && !drawFunEffects) {
+            if (!drawPathVisualizer && !drawPositionHighlights && !drawPestEsp && !drawFunEffects) {
                 return;
             }
             if (drawPathVisualizer) {
@@ -69,6 +71,10 @@ public final class ClientFeatureBootstrap {
             }
             if (drawPositionHighlights) {
                 PositionHighlighter.renderWorld(ctx);
+            }
+            if (drawPestEsp) {
+                PestEspManager.renderWorld();
+                PestEspManager.renderTracerOverlay();
             }
             if (drawFunEffects) {
                 FunRenderer.renderWorld(ctx);

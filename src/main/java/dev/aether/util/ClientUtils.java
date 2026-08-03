@@ -5,7 +5,6 @@ import dev.aether.config.AetherConfig;
 import dev.aether.config.ConfigHelpers;
 import dev.aether.mixin.AccessorAbstractContainerScreen;
 import dev.aether.mixin.AccessorKeyMapping;
-import dev.aether.mixin.MixinMinecraft;
 import dev.aether.macro.MacroState;
 import dev.aether.modules.failsafe.FailsafeManager;
 import dev.aether.modules.farming.UngrabMouse;
@@ -606,16 +605,25 @@ public class ClientUtils {
         if (client.player == null || client.options == null)
             return;
 
-        pressAndReleaseInput(client, USE_CLICK_SEQUENCE,
-                () -> {
-                    setKeyMappingState(client.options.keyShift, true);
-                    setKeyMappingState(client.options.keyUse, true);
-                },
-                () -> {
-                    setKeyMappingState(client.options.keyUse, false);
-                    setKeyMappingState(client.options.keyShift, false);
-                },
-                randomizedClickHoldMs());
+        long clickId = USE_CLICK_SEQUENCE.incrementAndGet();
+        long holdMs = randomizedClickHoldMs();
+
+        client.execute(() -> {
+            setKeyMappingState(client.options.keyShift, true);
+            // Press use only after shift has been applied on the client thread.
+            scheduleClientAction(client, 60, () -> {
+                if (USE_CLICK_SEQUENCE.get() != clickId) {
+                    return;
+                }
+                setKeyMappingState(client.options.keyUse, true);
+                scheduleClientAction(client, holdMs, () -> {
+                    if (USE_CLICK_SEQUENCE.get() == clickId) {
+                        setKeyMappingState(client.options.keyUse, false);
+                        setKeyMappingState(client.options.keyShift, false);
+                    }
+                });
+            });
+        });
     }
 
     /**thismake
@@ -630,15 +638,12 @@ public class ClientUtils {
         client.execute(() -> {
             if (client.player != null) client.player.setShiftKeyDown(true);
             setKeyMappingState(client.options.keyShift, true);
-        });
-
-        if (!client.isSameThread()) {
-            try { Thread.sleep(60); } catch (InterruptedException ignored) {}
-        }
-
-        client.execute(() -> {
-            if (client.player == null) return;
-            ((MixinMinecraft) client).aether$startAttack();
+            // Schedule the attack only after the shift state has been applied on the
+            // client thread. This also preserves the delay when called from that thread.
+            scheduleClientAction(client, 60, () -> {
+                if (client.player == null) return;
+                clickKeyMapping(client.options.keyAttack);
+            });
         });
     }
 
@@ -677,7 +682,7 @@ public class ClientUtils {
         if (client == null) return;
         client.execute(() -> {
             if (client.player == null) return;
-            ((MixinMinecraft) client).aether$startAttack();
+            clickKeyMapping(client.options.keyAttack);
         });
     }
 
@@ -692,7 +697,7 @@ public class ClientUtils {
                 if (client.player == null) {
                     return;
                 }
-                ((MixinMinecraft) client).aether$startAttack();
+                clickKeyMapping(client.options.keyAttack);
             });
             return;
         }

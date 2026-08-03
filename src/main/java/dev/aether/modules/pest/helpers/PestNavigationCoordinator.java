@@ -16,13 +16,14 @@ final class PestNavigationCoordinator {
     private static final long HINT_PITCH_WAIT_TIMEOUT_MS = 3000L;
 
     interface Context {
-        long getStateEnteredAt();
-        void setStateEnteredAt(long enteredAt);
-        int getVacuumSlot();
-        void setVacuumSlot(int slot);
-        double getVacuumRange();
-        int getStuckTicks();
-        void setStuckTicks(int stuckTicks);
+        PestDestroyerRuntime runtime();
+        default long getStateEnteredAt() { return runtime().stateEnteredAt; }
+        default void setStateEnteredAt(long value) { runtime().stateEnteredAt = value; }
+        default int getVacuumSlot() { return runtime().vacuumSlot; }
+        default void setVacuumSlot(int value) { runtime().vacuumSlot = value; }
+        default double getVacuumRange() { return runtime().vacuumRange; }
+        default int getStuckTicks() { return runtime().stuckTicks; }
+        default void setStuckTicks(int value) { runtime().stuckTicks = value; }
         int findVacuumHotbarSlot(Minecraft client);
         void setState(PestDestroyer.State state);
         Entity findClosestPest(Minecraft client);
@@ -31,9 +32,6 @@ final class PestNavigationCoordinator {
         boolean tryNextPlot(Minecraft client);
         boolean tryLeaveOneOnCurrentWhitelistedPlot(Minecraft client);
         void startRoofAotv(Minecraft client, String plot);
-        boolean requiresEtherwarpEntry();
-        boolean isHoldDestinationAbandoned();
-        void startEtherwarpEntry(Minecraft client);
     }
 
     private PestNavigationCoordinator() {
@@ -52,31 +50,13 @@ final class PestNavigationCoordinator {
                 return;
             }
 
-            boolean holdPlot = !context.isHoldDestinationAbandoned()
-                    && PestDiscoDestinationManager.matchesPlot(targetPlot);
-
             String currentPlot = ClientUtils.getCurrentPlot();
-            boolean forceCurrentPlotTeleport = AetherConfig.PEST_PLOT_TP_FOR_CURRENT_PLOT.get() || holdPlot;
+            boolean forceCurrentPlotTeleport =
+                    AetherConfig.PEST_PLOT_TP_FOR_CURRENT_PLOT.get();
             if (targetPlot.equals(currentPlot) && !forceCurrentPlotTeleport) {
                 ClientUtils.sendDebugMessage("[PestDestroyer] Already on plot " + targetPlot + ", skipping TP.");
                 finalizePlotArrival(client, navigationState, context, targetPlot);
                 return;
-            }
-
-            // Discoless arrives with the AOTV in hand instead; the entry state selects it.
-            if (holdPlot && !context.requiresEtherwarpEntry()) {
-                if (context.getVacuumSlot() == -1) {
-                    context.setVacuumSlot(context.findVacuumHotbarSlot(client));
-                }
-                if (context.getVacuumSlot() == -1) {
-                    context.setState(PestDestroyer.State.EQUIP_VACUUM);
-                    return;
-                }
-                if (client.player == null
-                        || ((AccessorInventory) client.player.getInventory()).getSelected() != context.getVacuumSlot()) {
-                    client.execute(() -> FailsafeManager.selectHotbarSlot(client, context.getVacuumSlot()));
-                    return;
-                }
             }
 
             ClientUtils.sendDebugMessage("[PestDestroyer] Teleporting to plot " + targetPlot);
@@ -106,14 +86,6 @@ final class PestNavigationCoordinator {
             if (targetPlot != null && PestPlotNavigator.plotsEqual(targetPlot, currentPlot)) {
                 ClientUtils.sendDebugMessage("[PestDestroyer] Teleport to plot " + targetPlot + " confirmed by current plot.");
                 finalizePlotArrival(client, navigationState, context, targetPlot);
-                return;
-            }
-
-            if (targetPlot != null && !context.isHoldDestinationAbandoned()
-                    && PestDiscoDestinationManager.matchesPlot(targetPlot)) {
-                ClientUtils.sendDebugMessage("[PestDestroyer] Waiting for hold plot " + targetPlot
-                                + " confirmation; not retrying plottp.");
-                context.setStateEnteredAt(System.currentTimeMillis());
                 return;
             }
 
@@ -300,21 +272,6 @@ final class PestNavigationCoordinator {
         navigationState.trustedPlotExpiresAt = System.currentTimeMillis() + 120_000;
         navigationState.plotTpSent = false;
         navigationState.plotTpWindow = null;
-        navigationState.discoWalkStarted = false;
-        navigationState.discoTargetReached = false;
-        navigationState.discoWalkStartedAt = 0L;
-
-        if (!context.isHoldDestinationAbandoned() && PestDiscoDestinationManager.matchesPlot(plot)) {
-            if (context.requiresEtherwarpEntry()) {
-                context.startEtherwarpEntry(client);
-                return;
-            }
-            ClientUtils.sendDebugMessage("[PestDestroyer] Disco destination active on plot " + plot + ". Holding position after plot TP.");
-            navigationState.discoTargetReached = true;
-            context.setState(PestDestroyer.State.DISCO_SPIN);
-            return;
-        }
-
         if (PestAotvManager.shouldDoAotvOnCurrentPlot(client, plot, true)) {
             ClientUtils.sendDebugMessage("[PestDestroyer] AOTV to roof needed for plot " + plot);
             context.startRoofAotv(client, plot);
@@ -357,16 +314,9 @@ final class PestNavigationCoordinator {
             return false;
         }
 
-        float minPitch = AetherConfig.PEST_ABOVE_TARGET_PITCH_MIN.get();
-        float maxPitch = AetherConfig.PEST_ABOVE_TARGET_PITCH_MAX.get();
-        if (maxPitch < minPitch) {
-            float swap = minPitch;
-            minPitch = maxPitch;
-            maxPitch = swap;
-        }
-
+        PestPitchRange pitchRange = PestPitchRange.configured();
         float currentPitch = client.player.getXRot();
-        if (currentPitch >= minPitch && currentPitch <= maxPitch && !RotationManager.isRotating()) {
+        if (pitchRange.contains(currentPitch) && !RotationManager.isRotating()) {
             return true;
         }
 
@@ -374,7 +324,7 @@ final class PestNavigationCoordinator {
             return false;
         }
 
-        float targetPitch = Math.max(minPitch, Math.min(maxPitch, currentPitch));
+        float targetPitch = pitchRange.clamp(currentPitch);
         RotationManager.rotateToYawPitch(
                 client,
                 client.player.getYRot(),

@@ -49,8 +49,7 @@ final class PestPlotNavigator {
 
     static boolean tryNextPlot(Minecraft client, PestNavigationState navigationState) {
         Set<String> infested = filterSkippedPlots(
-                PestDiscoDestinationManager.prioritizePlots(PestManager.getInfestedPlotsFromTab(client)),
-                navigationState);
+                PestManager.getInfestedPlotsFromTab(client), navigationState);
         if (infested.isEmpty()) {
             return false;
         }
@@ -69,30 +68,6 @@ final class PestPlotNavigator {
             return true;
         }
 
-        return false;
-    }
-
-    @Deprecated
-    static boolean tryNextPlotExcluding(Minecraft client, PestNavigationState navigationState, String currentPlot) {
-        Set<String> infested = filterSkippedPlots(
-                PestDiscoDestinationManager.prioritizePlots(PestManager.getInfestedPlotsFromTab(client)),
-                navigationState);
-        if (infested.isEmpty()) {
-            return false;
-        }
-
-        for (String plot : infested) {
-            if (!plotsEqual(plot, currentPlot)) {
-                navigationState.plotQueue.clear();
-                navigationState.plotQueue.addAll(infested);
-                navigationState.currentPlotIdx = navigationState.plotQueue.indexOf(plot);
-                navigationState.plotTpSent = false;
-                navigationState.getLocationAttempts = 0;
-                navigationState.waypointCycleCount = 0;
-                ClientUtils.sendDebugMessage("[PestDestroyer] Skipping to next available plot: " + plot);
-                return true;
-            }
-        }
         return false;
     }
 
@@ -116,25 +91,17 @@ final class PestPlotNavigator {
     }
 
     static boolean plotsEqual(String first, String second) {
-        return normalizePlot(first).equals(normalizePlot(second));
+        return PestPlotId.equals(first, second);
     }
 
     private static Set<String> filterSkippedPlots(Set<String> plots, PestNavigationState navigationState) {
         Set<String> filtered = new LinkedHashSet<>();
         for (String plot : plots) {
-            if (!navigationState.leaveOneSkippedPlots.contains(normalizePlot(plot))) {
+            if (!navigationState.leaveOneSkippedPlots.contains(PestPlotId.normalize(plot))) {
                 filtered.add(plot);
             }
         }
         return filtered;
     }
 
-    private static String normalizePlot(String plot) {
-        if (plot == null) {
-            return "";
-        }
-        String normalized = plot.trim().toLowerCase();
-        String digits = normalized.replaceAll("\\D", "");
-        return digits.isEmpty() ? normalized : digits;
-    }
 }

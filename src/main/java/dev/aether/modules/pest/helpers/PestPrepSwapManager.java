@@ -10,8 +10,21 @@ import dev.aether.util.ClientUtils;
 import net.minecraft.client.Minecraft;
 
 public class PestPrepSwapManager {
-    public static volatile boolean prepSwappedForCurrentPestCycle = false;
-    public static volatile boolean isPrepSwapping = false;
+    private static volatile boolean prepSwappedForCurrentPestCycle = false;
+    private static volatile boolean isPrepSwapping = false;
+
+    public static boolean wasPrepSwappedForCurrentCycle() {
+        return prepSwappedForCurrentPestCycle;
+    }
+
+    public static boolean isPrepSwapping() {
+        return isPrepSwapping;
+    }
+
+    public static void clearCycleState() {
+        prepSwappedForCurrentPestCycle = false;
+        isPrepSwapping = false;
+    }
 
     public static void resetState() {
         prepSwappedForCurrentPestCycle = false;
@@ -69,7 +82,7 @@ public class PestPrepSwapManager {
                     return;
                 }
 
-                if (!PestManager.isCleaningInProgress) {
+                if (!PestManager.isCleaningInProgress()) {
                     GearManager.finalResume(client);
                 }
             } catch (Exception e) {
@@ -94,7 +107,7 @@ public class PestPrepSwapManager {
 
     private static boolean shouldAbortPrepSwap() {
         Minecraft client = client();
-        if (MacroWorkerThread.shouldAbortTask(client, MacroState.State.FARMING) || PestManager.isCleaningInProgress) {
+        if (MacroWorkerThread.shouldAbortTask(client, MacroState.State.FARMING) || PestManager.isCleaningInProgress()) {
             if (dev.aether.macro.MacroStateManager.getCurrentState() != MacroState.State.FARMING
                     || !dev.aether.macro.MacroStateManager.isMacroRunning()) {
                 prepSwappedForCurrentPestCycle = false;
@@ -138,7 +151,7 @@ public class PestPrepSwapManager {
             }
         }
 
-        while (LoadoutManager.isSwappingLoadout && !PestManager.isCleaningInProgress) {
+        while (LoadoutManager.isSwappingLoadout && !PestManager.isCleaningInProgress()) {
             MacroWorkerThread.sleep(50);
         }
         MacroWorkerThread.sleep(250);

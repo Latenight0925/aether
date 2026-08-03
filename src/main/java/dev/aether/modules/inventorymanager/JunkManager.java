@@ -40,8 +40,8 @@ public class JunkManager {
 
     private static boolean isPriorityEventActive(Minecraft client) {
         return MacroStateManager.getCurrentState() != MacroState.State.FARMING ||
-                PestManager.isCleaningInProgress ||
-                PestPrepSwapManager.prepSwappedForCurrentPestCycle ||
+                PestManager.isCleaningInProgress() ||
+                PestPrepSwapManager.wasPrepSwappedForCurrentCycle() ||
                 (AetherConfig.AUTO_VISITOR.get() && VisitorManager.getVisitorCount(client) >= AetherConfig.VISITOR_THRESHOLD.get()) ||
                 BookCombineManager.isCombining ||
                 BookCombineManager.isPreparingToCombine ||
@@ -70,7 +70,7 @@ public class JunkManager {
 
         if (isDropping) {
             if (MacroStateManager.getCurrentState() != MacroState.State.DROPPING_JUNK ||
-                    PestManager.isCleaningInProgress || PestPrepSwapManager.prepSwappedForCurrentPestCycle) {
+                PestManager.isCleaningInProgress() || PestPrepSwapManager.wasPrepSwappedForCurrentCycle()) {
                 isDropping = false;
                 if (MacroStateManager.getCurrentState() == MacroState.State.DROPPING_JUNK) {
                     MacroStateManager.setCurrentState(MacroState.State.FARMING);

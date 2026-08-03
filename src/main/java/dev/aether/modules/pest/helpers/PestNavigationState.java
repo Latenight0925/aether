@@ -26,7 +26,24 @@ final class PestNavigationState {
     String lastTargetPlot = null;
     String trustedPlot = null;
     long trustedPlotExpiresAt = 0;
-    boolean discoWalkStarted = false;
-    boolean discoTargetReached = false;
-    long discoWalkStartedAt = 0L;
+
+    void resetForRun() {
+        fireworkFirstPos = null;
+        fireworkLastPos = null;
+        fireworkParticleCount = 0;
+        isCapturingFirework = false;
+        fireworkCaptureStartedAt = 0L;
+        calculatedWaypoint = null;
+        getLocationAttempts = 0;
+        waypointCycleCount = 0;
+        plotTpSent = false;
+        plotTpWindow = null;
+        plotQueue.clear();
+        leaveOneSkippedPlots.clear();
+        currentPlotIdx = 0;
+        lastTargetPlot = null;
+        trustedPlot = null;
+        trustedPlotExpiresAt = 0L;
+    }
+
 }

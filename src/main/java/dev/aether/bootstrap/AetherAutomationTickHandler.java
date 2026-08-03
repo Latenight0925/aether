@@ -163,54 +163,13 @@ public final class AetherAutomationTickHandler {
     }
 
     private static void handleSneakForAotv(Minecraft client) {
-        if (PestAotvManager.isSneakingForAotv && client.options != null) {
+        if (PestAotvManager.isSneakingForAotv() && client.options != null) {
             ClientUtils.setKeyMappingState(client.options.keyShift, true);
         }
     }
 
     private static void handleFlightStop(Minecraft client) {
-        if (!PestReturnManager.isStoppingFlight) {
-            return;
-        }
-
-        PestReturnManager.flightStopTicks++;
-        switch (PestReturnManager.flightStopStage) {
-            case 0:
-                if (client.options.keyJump != null) {
-                    ClientUtils.setKeyMappingState(client.options.keyJump, true);
-                }
-                if (PestReturnManager.flightStopTicks >= 2) {
-                    PestReturnManager.flightStopStage = 1;
-                    PestReturnManager.flightStopTicks = 0;
-                }
-                break;
-            case 1:
-                if (client.options.keyJump != null) {
-                    ClientUtils.setKeyMappingState(client.options.keyJump, false);
-                }
-                if (PestReturnManager.flightStopTicks >= 3) {
-                    PestReturnManager.flightStopStage = 2;
-                    PestReturnManager.flightStopTicks = 0;
-                }
-                break;
-            case 2:
-                if (client.options.keyJump != null) {
-                    ClientUtils.setKeyMappingState(client.options.keyJump, true);
-                }
-                if (PestReturnManager.flightStopTicks >= 2) {
-                    PestReturnManager.flightStopStage = 3;
-                    PestReturnManager.flightStopTicks = 0;
-                }
-                break;
-            case 3:
-                if (client.options.keyJump != null) {
-                    ClientUtils.setKeyMappingState(client.options.keyJump, false);
-                }
-                PestReturnManager.isStoppingFlight = false;
-                break;
-            default:
-                break;
-        }
+        PestReturnManager.updateFlightStop(client);
     }
 
     private static void handleStashPickup(Minecraft client) {

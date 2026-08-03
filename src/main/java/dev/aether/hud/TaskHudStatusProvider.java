@@ -122,7 +122,7 @@ final class TaskHudStatusProvider {
         if (cooldownMs > 0 && alive >= threshold) {
             return TaskStatusRow.waiting("Pest Destroyer", "cooldown " + fmtSeconds(cooldownMs));
         }
-        if (AetherConfig.AUTO_PEST_EXCHANGE.get() && PestBonusManager.isBonusInactive) {
+        if (AetherConfig.AUTO_PEST_EXCHANGE.get() && PestBonusManager.isBonusInactive()) {
             return TaskStatusRow.blocked("Pest Destroyer", "waiting for pest exchange");
         }
         if (AetherConfig.DELAY_PEST_FOR_CROP_FEVER.get() && CropFeverManager.isCropFeverActive) {
@@ -170,7 +170,8 @@ final class TaskHudStatusProvider {
         }
 
         int fullTrapCount = PestTrapManager.getFullTrapsFromTab(client).size();
-        if (PestTrapManager.isRunning && PestTrapManager.currentOperation == PestTrapManager.Operation.CLEAR) {
+        if (PestTrapManager.isRunning()
+                && PestTrapManager.getCurrentOperation() == PestTrapManager.Operation.CLEAR) {
             return TaskStatusRow.running("Clear Pest Traps",
                     fullTrapCount > 0 ? fullTrapCount + " full traps queued" : "clearing current pass");
         }
@@ -192,7 +193,8 @@ final class TaskHudStatusProvider {
         }
 
         int emptyTrapCount = PestTrapManager.getNoBaitTrapsFromTab(client).size();
-        if (PestTrapManager.isRunning && PestTrapManager.currentOperation == PestTrapManager.Operation.REFILL) {
+        if (PestTrapManager.isRunning()
+                && PestTrapManager.getCurrentOperation() == PestTrapManager.Operation.REFILL) {
             return TaskStatusRow.running("Refill Traps",
                     emptyTrapCount > 0 ? emptyTrapCount + " empty traps queued" : "refilling current pass");
         }
@@ -284,20 +286,20 @@ final class TaskHudStatusProvider {
         if (!AetherConfig.AUTO_PEST_EXCHANGE.get()) {
             return TaskStatusRow.disabled("Pest Exchange", "auto exchange disabled");
         }
-        if (AutoPestExchangeManager.isRunning() || PestExchangeManager.isExchanging) {
+        if (AutoPestExchangeManager.isRunning() || PestExchangeManager.isExchanging()) {
             return TaskStatusRow.running("Pest Exchange", "heading to Phillip");
         }
 
         long cooldownMs = AutoPestExchangeManager.getRunCooldownRemainingMs();
         long inactiveMs = AutoPestExchangeManager.getBonusInactiveElapsedMs();
 
-        if (!PestBonusManager.isBonusInactive) {
+        if (!PestBonusManager.isBonusInactive()) {
             return TaskStatusRow.waiting("Pest Exchange", "bonus is active");
         }
         if (cooldownMs > 0 && inactiveMs > 0) {
             return TaskStatusRow.waiting("Pest Exchange", "cooldown " + fmtSeconds(cooldownMs));
         }
-        if (PestManager.isCleaningInProgress) {
+        if (PestManager.isCleaningInProgress()) {
             return TaskStatusRow.blocked("Pest Exchange", "waiting for pest cycle");
         }
         if (MacroStateManager.getCurrentState() != MacroState.State.FARMING) {

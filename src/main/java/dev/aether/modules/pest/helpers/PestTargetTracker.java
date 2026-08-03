@@ -1,8 +1,6 @@
 package dev.aether.modules.pest.helpers;
 
 import dev.aether.util.ClientUtils;
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.ints.IntSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.Entity;
@@ -15,15 +13,17 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.world.phys.Vec3;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.function.Predicate;
 
-final class PestTargetTracker {
+public final class PestTargetTracker {
     private static final List<String> PEST_TEXTURE_FRAGMENTS = List.of(
             "70a1e836bf1968b2eaa4837227a19204f17295d870ee9e754bd6b6d60ddbed3c",
             "a24c69f96ce5562221e195c8ef2bfad71ebf7f95f5ae914a484a8d0ec21672674",
@@ -39,18 +39,21 @@ final class PestTargetTracker {
             "4ce69e90adf34718f313ec24d6c6135b69b3788c61849844666ccc83ca640c0b16",
             "254aff4c0b2dce3a672349cc0e99e6f3a9deebe4b3556e84611eca250a7821bf");
 
-    private static Object[] entityBuffer = new Object[512];
-    private static int entityBufferSize = 0;
+    private static int cachedTick = Integer.MIN_VALUE;
+    private static int cachedLevelId = 0;
+    private static PestSnapshot cachedSnapshot = PestSnapshot.EMPTY;
 
     private PestTargetTracker() {
     }
 
-    static Entity peekNextQueuedPest(Minecraft client, Deque<Entity> pestTargetQueue, Collection<Entity> killedEntities) {
+    static Entity peekNextQueuedPest(
+            Minecraft client,
+            Deque<Entity> pestTargetQueue,
+            Collection<Entity> killedEntities
+    ) {
         while (!pestTargetQueue.isEmpty()) {
             Entity next = pestTargetQueue.peekFirst();
-            if (next == null || next.isRemoved() || (next instanceof LivingEntity le && le.isDeadOrDying())
-                    || killedEntities.contains(next)
-                    || (client != null && client.player != null && next == client.player)) {
+            if (isUnavailable(client, next, killedEntities)) {
                 pestTargetQueue.pollFirst();
                 continue;
             }
@@ -59,355 +62,241 @@ final class PestTargetTracker {
         return null;
     }
 
-    static void rebuildPestTargetQueue(Minecraft client, Deque<Entity> pestTargetQueue, Collection<Entity> killedEntities) {
-        if (client == null || client.level == null || client.player == null) {
-            return;
-        }
-
-        List<Entity> pests = new ArrayList<>();
-        Set<Integer> seenEntityIds = new HashSet<>();
-
-        int count = fillEntityBuffer(client);
-        for (int i = 0; i < count; i++) {
-            Entity entity = (Entity) entityBuffer[i];
-            if (entity == client.player || entity.isRemoved() || (entity instanceof LivingEntity le && le.isDeadOrDying()) || entity.getY() < 50) {
-                continue;
-            }
-            if (killedEntities.contains(entity)) {
-                continue;
-            }
-
-            Entity target = null;
-            if (entity instanceof Bat || entity instanceof Silverfish) {
-                target = entity;
-            } else if (entity instanceof ArmorStand armorStand && isPestArmorStand(armorStand)) {
-                Entity real = findRealEntityNear(client, armorStand);
-                target = (real != null) ? real : (Entity) (Object) armorStand;
-            }
-
-            if (target == null || target.isRemoved() || (target instanceof LivingEntity le && le.isDeadOrDying()) || killedEntities.contains(target)) {
-                continue;
-            }
-            if (seenEntityIds.add(target.getId())) {
-                pests.add(target);
-            }
-        }
-
-        final net.minecraft.client.player.LocalPlayer sortPlayer = client.player;
-        if (sortPlayer != null) {
-            pests.sort((a, b) -> Double.compare(sortPlayer.distanceToSqr(a), sortPlayer.distanceToSqr(b)));
-        }
-
-        pestTargetQueue.clear();
-        pestTargetQueue.addAll(pests);
-
-        if (!pests.isEmpty()) {
-            ClientUtils.sendDebugMessage("[PestDestroyer] Rebuilt target queue with " + pests.size() + " pest(s). Next: "
-                            + formatPos(pests.get(0).position()));
-        }
-    }
-
-    static int countAvailablePests(Minecraft client, Collection<Entity> killedEntities) {
-        if (client == null || client.level == null || client.player == null) {
-            return 0;
-        }
-
-        Set<Integer> seenEntityIds = new HashSet<>();
-
-        int count = fillEntityBuffer(client);
-        for (int i = 0; i < count; i++) {
-            Entity entity = (Entity) entityBuffer[i];
-            if (entity == client.player || entity.isRemoved() || (entity instanceof LivingEntity le && le.isDeadOrDying()) || entity.getY() < 50) {
-                continue;
-            }
-            if (killedEntities.contains(entity)) {
-                continue;
-            }
-
-            Entity target = null;
-            if (entity instanceof Bat || entity instanceof Silverfish) {
-                target = entity;
-            } else if (entity instanceof ArmorStand armorStand && isPestArmorStand(armorStand)) {
-                Entity real = findRealEntityNear(client, armorStand);
-                target = (real != null) ? real : (Entity) (Object) armorStand;
-            }
-
-            if (target == null || target.isRemoved() || (target instanceof LivingEntity le && le.isDeadOrDying()) || killedEntities.contains(target)) {
-                continue;
-            }
-            seenEntityIds.add(target.getId());
-        }
-
-        return seenEntityIds.size();
-    }
-
-    static Entity getNextQueuedPest(Minecraft client, Deque<Entity> pestTargetQueue, Collection<Entity> killedEntities) {
+    static Entity getNextQueuedPest(
+            Minecraft client,
+            Deque<Entity> pestTargetQueue,
+            Collection<Entity> killedEntities
+    ) {
         while (!pestTargetQueue.isEmpty()) {
             Entity next = pestTargetQueue.pollFirst();
-            if (next == null || next.isRemoved() || (next instanceof LivingEntity le && le.isDeadOrDying())
-                    || killedEntities.contains(next)
-                    || (client != null && client.player != null && next == client.player)) {
-                continue;
+            if (!isUnavailable(client, next, killedEntities)) {
+                return next;
             }
-            return next;
         }
         return null;
     }
 
+    static void rebuildPestTargetQueue(
+            Minecraft client,
+            Deque<Entity> pestTargetQueue,
+            Collection<Entity> killedEntities
+    ) {
+        List<Entity> pests = availableTargets(client, killedEntities);
+        if (client.player != null) {
+            pests.sort(Comparator.comparingDouble(client.player::distanceToSqr));
+        }
+        pestTargetQueue.clear();
+        pestTargetQueue.addAll(pests);
+        if (!pests.isEmpty()) {
+            ClientUtils.sendDebugMessage("[PestDestroyer] Rebuilt target queue with " + pests.size()
+                    + " pest(s). Next: " + formatPos(pests.getFirst().position()));
+        }
+    }
+
+    static int countAvailablePests(Minecraft client, Collection<Entity> killedEntities) {
+        return availableTargets(client, killedEntities).size();
+    }
+
     static Entity findClosestPest(Minecraft client, Collection<Entity> killedEntities) {
-        if (client.level == null || client.player == null) {
+        if (client == null || client.player == null) {
             return null;
         }
-
-        Entity closest = null;
-        double closestDist = Double.MAX_VALUE;
-        int armorStandCount = 0;
-        int batSilverfishCount = 0;
-        int totalEntities = 0;
-        int pestsFound = 0;
-
-        int count = fillEntityBuffer(client);
-        for (int i = 0; i < count; i++) {
-            Entity entity = (Entity) entityBuffer[i];
-            if (entity == client.player || entity.isRemoved() || (entity instanceof LivingEntity le && le.isDeadOrDying()) || entity.getY() < 50) {
-                continue;
-            }
-            if (killedEntities.contains(entity)) {
-                continue;
-            }
-            totalEntities++;
-
-            boolean isPest = false;
-            if (entity instanceof Bat || entity instanceof Silverfish) {
-                batSilverfishCount++;
-                isPest = true;
-            } else if (entity instanceof ArmorStand armorStand) {
-                armorStandCount++;
-                isPest = isPestArmorStand(armorStand);
-            }
-
-            if (isPest) {
-                pestsFound++;
-                double dist = client.player.distanceToSqr(entity);
-                if (dist < closestDist) {
-                    closestDist = dist;
-                    closest = entity;
-                }
-            }
-        }
-
-        ClientUtils.sendDebugMessage("[PestDestroyer] Scan: " + totalEntities + " entities, "
-                        + armorStandCount + " armor stands, "
-                        + batSilverfishCount + " bats/silverfish, "
-                        + pestsFound + " pests found");
-
-        if (closest instanceof ArmorStand) {
-            Entity real = findRealEntityNear(client, closest);
-            if (real != null) {
-                closest = real;
-            }
-        }
-
+        List<Entity> targets = availableTargets(client, killedEntities);
+        Entity closest = targets.stream()
+                .min(Comparator.comparingDouble(client.player::distanceToSqr))
+                .orElse(null);
+        PestSnapshot snapshot = snapshot(client);
+        ClientUtils.sendDebugMessage("[PestDestroyer] Scan: " + snapshot.rawEntityCount()
+                + " entities, " + snapshot.markers().size() + " pest markers, "
+                + targets.size() + " available pests");
         return closest;
     }
 
     static boolean hasPestArmorStandNearby(Minecraft client, Entity targetEntity) {
-        int count = fillEntityBuffer(client);
-        for (int i = 0; i < count; i++) {
-            Entity other = (Entity) entityBuffer[i];
-            if (!(other instanceof ArmorStand armorStand)) {
-                continue;
-            }
-            if (other.distanceToSqr(targetEntity) > 4.0) {
-                continue;
-            }
-            if (isPestArmorStand(armorStand)) {
-                return true;
-            }
+        if (targetEntity == null) {
+            return false;
         }
-        return false;
+        return snapshot(client).markers().stream()
+                .anyMatch(marker -> !marker.isRemoved() && marker.distanceToSqr(targetEntity) <= 4.0);
     }
 
     static int countVisiblePestSkulls(Minecraft client) {
-        if (client == null || client.level == null) {
-            return 0;
-        }
-        int count = fillEntityBuffer(client);
-        int skullCount = 0;
-        for (int i = 0; i < count; i++) {
-            Entity entity = (Entity) entityBuffer[i];
-            if (!(entity instanceof ArmorStand armorStand)) {
-                continue;
-            }
-            if (armorStand.isRemoved() || armorStand.getY() < 50) {
-                continue;
-            }
-            if (isPestArmorStand(armorStand)) {
-                skullCount++;
-            }
-        }
-        return skullCount;
+        return snapshot(client).markers().size();
     }
 
     static boolean hasPestSkullMarkerForTarget(Minecraft client, Entity target) {
-        if (client == null || client.level == null || target == null || target.isRemoved() || (target instanceof LivingEntity le && le.isDeadOrDying())) {
+        if (isUnavailable(client, target, List.of())) {
             return false;
         }
         if (target instanceof Bat || target instanceof Silverfish) {
             return true;
         }
         if (target instanceof ArmorStand armorStand) {
-            return isPestArmorStand(armorStand);
+            return snapshot(client).markers().contains(armorStand);
         }
         return false;
+    }
+
+    public static Entity selectClosestPestWithin(
+            Minecraft client,
+            double maxDistFromEye,
+            Predicate<Entity> condition
+    ) {
+        if (client == null || client.player == null || maxDistFromEye < 0.0) {
+            return null;
+        }
+        Vec3 eyePosition = client.player.getEyePosition();
+        double maxDistanceSq = maxDistFromEye * maxDistFromEye;
+        Entity closest = null;
+        double closestDistanceSq = Double.MAX_VALUE;
+        for (Entity target : snapshot(client).targets()) {
+            if (condition != null && !condition.test(target)) {
+                continue;
+            }
+            Vec3 targetEye = target.position().add(0, target.getEyeHeight(target.getPose()), 0);
+            double distanceSq = eyePosition.distanceToSqr(targetEye);
+            if (distanceSq <= maxDistanceSq && distanceSq < closestDistanceSq) {
+                closest = target;
+                closestDistanceSq = distanceSq;
+            }
+        }
+        return closest;
+    }
+
+    /** Returns the pest entities currently visible to the client. */
+    public static List<Entity> getLoadedPests(Minecraft client) {
+        return snapshot(client).targets();
+    }
+
+    public static List<Entity> getLoadedPestMobs(Minecraft client) {
+        return snapshot(client).targets().stream()
+                .filter(entity -> entity instanceof Bat || entity instanceof Silverfish)
+                .filter(entity -> !isUnavailable(client, entity, List.of()))
+                .toList();
+    }
+
+    private static List<Entity> availableTargets(Minecraft client, Collection<Entity> killedEntities) {
+        List<Entity> available = new ArrayList<>();
+        for (Entity target : snapshot(client).targets()) {
+            if (!isUnavailable(client, target, killedEntities)) {
+                available.add(target);
+            }
+        }
+        return available;
+    }
+
+    private static boolean isUnavailable(
+            Minecraft client,
+            Entity entity,
+            Collection<Entity> killedEntities
+    ) {
+        return entity == null
+                || entity.isRemoved()
+                || entity.getY() < 50
+                || entity instanceof LivingEntity living && living.isDeadOrDying()
+                || killedEntities.contains(entity)
+                || client != null && client.player != null && entity == client.player;
+    }
+
+    private static PestSnapshot snapshot(Minecraft client) {
+        if (client == null || client.level == null || client.player == null) {
+            return PestSnapshot.EMPTY;
+        }
+        if (!client.isSameThread()) {
+            return PestClientThread.call(client, () -> snapshot(client), PestSnapshot.EMPTY);
+        }
+
+        int tick = client.player.tickCount;
+        int levelId = System.identityHashCode(client.level);
+        if (cachedTick == tick && cachedLevelId == levelId) {
+            return cachedSnapshot;
+        }
+
+        List<Entity> rawEntities = new ArrayList<>();
+        for (Entity entity : client.level.entitiesForRendering()) {
+            rawEntities.add(entity);
+        }
+
+        List<ArmorStand> markers = rawEntities.stream()
+                .filter(ArmorStand.class::isInstance)
+                .map(ArmorStand.class::cast)
+                .filter(marker -> !marker.isRemoved() && marker.getY() >= 50 && isPestArmorStand(marker))
+                .toList();
+        Map<Integer, Entity> targetsById = new LinkedHashMap<>();
+        for (Entity entity : rawEntities) {
+            if (entity == client.player || entity.isRemoved() || entity.getY() < 50) {
+                continue;
+            }
+            Entity target = null;
+            if (entity instanceof Bat || entity instanceof Silverfish) {
+                target = entity;
+            } else if (entity instanceof ArmorStand marker && markers.contains(marker)) {
+                target = findRealEntityNear(rawEntities, marker);
+                if (target == null) {
+                    target = marker;
+                }
+            }
+            if (target != null && !isUnavailable(client, target, List.of())) {
+                targetsById.putIfAbsent(target.getId(), target);
+            }
+        }
+
+        cachedTick = tick;
+        cachedLevelId = levelId;
+        cachedSnapshot = new PestSnapshot(List.copyOf(targetsById.values()), markers, rawEntities.size());
+        return cachedSnapshot;
+    }
+
+    private static Entity findRealEntityNear(List<Entity> entities, ArmorStand armorStand) {
+        Entity closest = null;
+        double closestDistance = Double.MAX_VALUE;
+        for (Entity entity : entities) {
+            if (!(entity instanceof Bat || entity instanceof Silverfish) || entity.isRemoved()) {
+                continue;
+            }
+            double distance = entity.distanceToSqr(armorStand);
+            if (distance <= 4.0 && distance < closestDistance) {
+                closest = entity;
+                closestDistance = distance;
+            }
+        }
+        return closest;
     }
 
     private static boolean isPestArmorStand(ArmorStand armorStand) {
         ItemStack headItem = armorStand.getItemBySlot(EquipmentSlot.HEAD);
-        if (headItem.isEmpty()) {
+        if (headItem.isEmpty() || headItem.has(DataComponents.CUSTOM_NAME)) {
             return false;
         }
-        if (headItem.has(DataComponents.CUSTOM_NAME)) {
-            return false;
-        }
-
         ResolvableProfile profile = headItem.get(DataComponents.PROFILE);
-        if (profile == null) {
+        if (profile == null || profile.partialProfile().properties() == null) {
             return false;
         }
-
-        var properties = profile.partialProfile().properties();
-        if (properties == null) {
-            return false;
-        }
-
-        var textures = properties.get("textures");
+        var textures = profile.partialProfile().properties().get("textures");
         if (textures == null) {
             return false;
         }
 
-        for (var prop : textures) {
-            String value = prop.value();
-            if (value == null) {
-                continue;
-            }
-
+        for (var property : textures) {
             try {
-                String decodedJson = new String(java.util.Base64.getDecoder().decode(value));
-                for (String fragment : PEST_TEXTURE_FRAGMENTS) {
-                    if (fragment != null && decodedJson.contains(fragment)) {
-                        return true;
-                    }
+                String decoded = new String(
+                        java.util.Base64.getDecoder().decode(property.value()),
+                        StandardCharsets.UTF_8);
+                if (PEST_TEXTURE_FRAGMENTS.stream().anyMatch(decoded::contains)) {
+                    return true;
                 }
-            } catch (Exception ignored) {
+            } catch (IllegalArgumentException ignored) {
+                ClientUtils.sendDebugMessage("Pest target marker contained an invalid base64 texture.");
             }
         }
         return false;
     }
 
-    @SuppressWarnings("rawtypes")
-    private static Entity findRealEntityNear(Minecraft client, Entity armorStand) {
-        java.util.Iterator rawIter = ((Iterable) client.level.entitiesForRendering()).iterator();
-        try {
-            while (rawIter.hasNext()) {
-                Object raw = rawIter.next();
-                if (!(raw instanceof Entity entity)) {
-                    continue;
-                }
-                if (entity instanceof ArmorStand || entity == client.player) {
-                    continue;
-                }
-                if (entity.distanceToSqr(armorStand) > 4.0) {
-                    continue;
-                }
-                if (entity instanceof Bat || entity instanceof Silverfish) {
-                    return entity;
-                }
-            }
-        } catch (java.util.ConcurrentModificationException ignored) {
-            return null;
-        }
-        return null;
-    }
-
-    @SuppressWarnings("rawtypes")
-    private static int fillEntityBuffer(Minecraft client) {
-        entityBufferSize = 0;
-        if (client == null || client.level == null) {
-            return 0;
-        }
-        java.util.Iterator rawIter = ((Iterable) client.level.entitiesForRendering()).iterator();
-        try {
-            while (rawIter.hasNext()) {
-                Object raw = rawIter.next();
-                if (raw instanceof Entity) {
-                    if (entityBufferSize >= entityBuffer.length) {
-                        entityBuffer = java.util.Arrays.copyOf(entityBuffer, entityBuffer.length * 2);
-                    }
-                    entityBuffer[entityBufferSize] = raw;
-                    entityBufferSize++;
-                }
-            }
-        } catch (java.util.ConcurrentModificationException ignored) {
-            return entityBufferSize;
-        }
-        return entityBufferSize;
-    }
-    
-	public static Entity selectClosestPestWithin(
-		Minecraft client, double maxDistFromEye, 
-		Predicate<Entity> condition
-	) {
-		if (client == null || client.level == null || client.player == null || maxDistFromEye < 0.0) {
-			return null;
-		}
-		final Vec3 eyeLoc = client.player.getEyePosition();
-		final double maxDistanceSq = maxDistFromEye * maxDistFromEye;
-		final int count = fillEntityBuffer(client);
-		final IntSet seenEntities = new IntOpenHashSet(count);
-		
-		double closestDistanceSq = Double.MAX_VALUE;
-		Entity closestCandidate = null;
-		
-		for (int i = 0; i < count; i++) {
-			Entity entity = (Entity) entityBuffer[i];
-			if (entity == client.player || entity.isRemoved() || (
-				entity instanceof LivingEntity le && le.isDeadOrDying()
-			) || entity.getY() < 50) { // server trick
-				continue;
-			}
-			
-			Entity target = null;
-			if (entity instanceof Bat || entity instanceof Silverfish) {
-				target = entity;
-			} else if (entity instanceof ArmorStand armorStand && isPestArmorStand(armorStand)) {
-				Entity reprEnt = findRealEntityNear(client, armorStand);
-				target = reprEnt != null ? reprEnt : armorStand;
-			}
-			
-			if (target == null 
-				|| target.isRemoved()
-				|| (target instanceof LivingEntity living && living.isDeadOrDying()) 
-				|| seenEntities.contains(target.getId()) 
-				|| (condition != null && !condition.test(target))
-			) {
-				continue;
-			}
-			
-			Vec3 targetEye = target.position().add(
-				0, target.getEyeHeight(target.getPose()), 0
-			);
-			double distanceSq = eyeLoc.distanceToSqr(targetEye);
-			if (distanceSq <= maxDistanceSq && distanceSq < closestDistanceSq) {
-				closestCandidate = target;
-				closestDistanceSq = distanceSq;
-			}
-			seenEntities.add(target.getId());
-		}
-		return closestCandidate;
-	}
-    
     private static String formatPos(Vec3 pos) {
         return String.format("%.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
+    }
+
+    private record PestSnapshot(List<Entity> targets, List<ArmorStand> markers, int rawEntityCount) {
+        private static final PestSnapshot EMPTY = new PestSnapshot(List.of(), List.of(), 0);
     }
 }

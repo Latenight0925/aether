@@ -447,11 +447,6 @@ public final class AetherConfig {
         public static final ListEntry<String> LEAVE_ONE_PEST_PLOTS = Config.list("leaveOnePestPlots",
                         Collections.emptyList(), String.class);
         public static final BooleanEntry SUNSET_PESTS = Config.bool("sunsetPests", false);
-        public static final BooleanEntry PEST_DISCO_DESTINATION_MODE = Config.bool("pestDiscoDestinationMode", false);
-        public static final StringEntry PEST_DISCO_DESTINATION_PLOT = Config.string("pestDiscoDestinationPlot", "0");
-        public static final BooleanEntry PEST_DISCOLESS_MODE = Config.bool("pestDiscolessMode", false);
-        public static final ListEntry<String> PEST_DISCOLESS_PLOT = Config.list("Discoless plot", 
-                        Arrays.asList("0"), String.class);
         public static final BooleanEntry PEST_AOTV_BETWEEN = Config.bool("pestAotvBetween", false);
         public static final BooleanEntry PEST_AOTV_CONFIRM_BETWEEN = Config.bool("pestAotvConfirmBetween", false);
         public static final IntEntry PEST_AOTV_DELAY_MIN = Config.integer("pestAotvDelayMin", 150).range(100, 250);
@@ -994,6 +989,13 @@ public final class AetherConfig {
         public static final BooleanEntry PIP_START_FLOATING = Config.bool("pipStartFloating", true);
         public static final BooleanEntry PIP_START_DECORATED = Config.bool("pipStartDecorated", true);
         public static final BooleanEntry PIP_ENABLE_ZOOM = Config.bool("pipEnableZoom", true);
+
+        // -- PEST ESP -------------------------------------------------------------
+        public static final BooleanEntry PEST_ESP_ENABLED = Config.bool("pestEspEnabled", false);
+        public static final BooleanEntry PEST_ESP_HIGHLIGHT = Config.bool("pestEspHighlight", true);
+        public static final IntEntry PEST_ESP_HIGHLIGHT_COLOR = Config.integer("pestEspHighlightColor", 0xFFFF3030);
+        public static final BooleanEntry PEST_ESP_TRACER = Config.bool("pestEspTracer", true);
+        public static final IntEntry PEST_ESP_TRACER_COLOR = Config.integer("pestEspTracerColor", 0xFFFF3030);
 
         // -- GREENHOUSE ------------------------------------------------------------
         public static final BooleanEntry AUTO_GREENHOUSE = Config.bool("autoGreenhouse", false);

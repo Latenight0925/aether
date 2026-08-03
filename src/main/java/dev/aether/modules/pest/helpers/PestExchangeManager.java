@@ -30,9 +30,13 @@ public class PestExchangeManager {
     private static final int MAX_ABIPHONE_CALL_ATTEMPTS = 3;
     private static final long ABIPHONE_GUI_WAIT_MS = 10000L;
 
-    public static volatile boolean isExchanging = false;
+    private static volatile boolean isExchanging = false;
     private static volatile int interactionStage = 0;
     private static volatile long interactionTime = 0;
+
+    public static boolean isExchanging() {
+        return isExchanging;
+    }
 
     public static void start(Minecraft client) {
         if (client.player == null) return;
@@ -45,7 +49,7 @@ public class PestExchangeManager {
             ClientUtils.sendMessage("§cPest exchange is already running.", false);
             return false;
         }
-        if (client.player == null) return false;
+        if (!hasPlayer(client)) return false;
 
         isExchanging = true;
         interactionStage = 0;
@@ -83,8 +87,8 @@ public class PestExchangeManager {
 
     private static boolean runExchange(Minecraft client) {
         // Step 1: Close any open screen
-        if (client.screen != null) {
-            client.execute(() -> {
+        if (PestClientThread.call(client, () -> client.screen != null, false)) {
+            PestClientThread.run(client, () -> {
                 if (client.player != null) client.player.closeContainer();
             });
             MacroWorkerThread.sleep(500);
@@ -105,7 +109,7 @@ public class PestExchangeManager {
                 ClientUtils.sendMessage("§eTeleporting to barn...", false);
         });
 
-        Vec3 posBefore = client.player.position();
+        Vec3 posBefore = PestClientThread.call(client, () -> client.player.position(), Vec3.ZERO);
         dev.aether.modules.failsafe.FailsafeManager.addRotationGracePeriod(dev.aether.config.AetherConfig.FAILSAFE_ROTATION_WARP_GRACE_MS.get());
         ClientUtils.sendCommand("/plottp barn");
         MacroWorkerThread.sleep(600);
@@ -113,7 +117,10 @@ public class PestExchangeManager {
         // Wait for teleport (up to 5 seconds)
         long tpDeadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < tpDeadline && isExchanging) {
-            if (client.player != null && client.player.position().distanceTo(posBefore) > 5) {
+            boolean teleported = PestClientThread.call(client,
+                    () -> client.player != null && client.player.position().distanceTo(posBefore) > 5,
+                    false);
+            if (teleported) {
                 break;
             }
             MacroWorkerThread.sleep(200);
@@ -161,18 +168,18 @@ public class PestExchangeManager {
         // Step 4: Find and interact with Phillip
         ClientUtils.sendDebugMessage("[PestExchange] Looking for Phillip...");
 
-        Entity phillipEntity = EntityUtils.findEntity(client, "Phillip");
-        if (phillipEntity == null) {
+        Vec3 phillipTarget = findPhillipTarget(client);
+        if (phillipTarget == null) {
             client.execute(() -> {
                 if (client.player != null)
                     ClientUtils.sendMessage("§ePhillip not found, retrying in 3s...", false);
             });
             MacroWorkerThread.sleep(3000);
             if (!isExchanging) return false;
-            phillipEntity = EntityUtils.findEntity(client, "Phillip");
+            phillipTarget = findPhillipTarget(client);
         }
 
-        if (phillipEntity == null) {
+        if (phillipTarget == null) {
             client.execute(() -> {
                 if (client.player != null)
                     ClientUtils.sendMessage("§cCould not find Phillip NPC after retry. Stopping.", false);
@@ -181,51 +188,44 @@ public class PestExchangeManager {
             return false;
         }
 
-        final Entity phillip = phillipEntity;
         ClientUtils.sendDebugMessage("[PestExchange] Found Phillip, rotating...");
 
         GearManager.swapToFarmingToolSync(client);
-        facePhillipForInteraction(client, phillip);
+        facePhillipForInteraction(client, phillipTarget);
 
         // left-click Phillip
         ClientUtils.sendDebugMessage("[PestExchange] Interacting with Phillip...");
-        ClientUtils.performAttackClick();
+        PestClientThread.run(client, ClientUtils::performAttackClick);
 
         // Wait for GUI to appear (up to 5 seconds)
         interactionStage = 1; // Waiting for Pesthunter GUI
         long guiDeadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < guiDeadline && isExchanging) {
-            if (client.screen instanceof AbstractContainerScreen<?> screen) {
-                String title = screen.getTitle().getString().toLowerCase();
-                if (title.contains("pesthunter") || title.contains("phillip")) {
-                    ClientUtils.sendDebugMessage("[PestExchange] Pesthunter GUI opened!");
-                    break;
-                }
+            if (isPesthunterGuiOpen(client)) {
+                ClientUtils.sendDebugMessage("[PestExchange] Pesthunter GUI opened!");
+                break;
             }
             MacroWorkerThread.sleep(200);
         }
 
         if (!isExchanging) return false;
 
-        if (!(client.screen instanceof AbstractContainerScreen)) {
+        if (!isPesthunterGuiOpen(client)) {
             // Try clicking again
             ClientUtils.sendDebugMessage("[PestExchange] GUI didn't open, retrying click...");
-            facePhillipForInteraction(client, phillip);
-            ClientUtils.performUseClick();
+            facePhillipForInteraction(client, phillipTarget);
+            PestClientThread.run(client, ClientUtils::performUseClick);
 
             guiDeadline = System.currentTimeMillis() + 5000;
             while (System.currentTimeMillis() < guiDeadline && isExchanging) {
-                if (client.screen instanceof AbstractContainerScreen<?> screen) {
-                    String title = screen.getTitle().getString().toLowerCase();
-                    if (title.contains("pesthunter") || title.contains("phillip")) {
-                        break;
-                    }
+                if (isPesthunterGuiOpen(client)) {
+                    break;
                 }
                 MacroWorkerThread.sleep(200);
             }
         }
 
-        if (!(client.screen instanceof AbstractContainerScreen)) {
+        if (!isPesthunterGuiOpen(client)) {
             client.execute(() -> {
                 if (client.player != null)
                     ClientUtils.sendMessage("§cFailed to open Phillip's GUI. Stopping.", false);
@@ -234,61 +234,7 @@ public class PestExchangeManager {
             return false;
         }
 
-        // Step 5: Click "Empty Vacuum Bag" in the Pesthunter GUI
-        MacroWorkerThread.sleep(ClientUtils.getGuiClickDelayMs(true));
-
-        if (!isExchanging) return false;
-
-        client.execute(() -> {
-            if (!(client.screen instanceof AbstractContainerScreen<?> screen)) return;
-
-            int vacuumSlot = findVacuumSlot(screen);
-            if (vacuumSlot == -1) {
-                    if (client.player != null)
-                    ClientUtils.sendMessage("§cCould not find 'Empty Vacuum Bag' slot. Closing.", false);
-                client.player.closeContainer();
-                isExchanging = false;
-                return;
-            }
-
-            ItemStack vacuumStack = screen.getMenu().slots.get(vacuumSlot).getItem();
-            List<Component> tooltipLines = vacuumStack.getTooltipLines(
-                    net.minecraft.world.item.Item.TooltipContext.EMPTY, client.player,
-                    net.minecraft.world.item.TooltipFlag.NORMAL);
-            String lore = tooltipLinesToString(tooltipLines);
-
-            if (lore.contains("Click to empty")) {
-                if (client.player != null)
-                    ClientUtils.sendMessage("§aEmptying vacuum bag!", false);
-                dev.aether.util.ClientUtils.performSlotClick(screen, vacuumSlot, 0, ContainerInput.PICKUP);
-            } else if (lore.contains("exchanged enough Pests")) {
-                if (client.player != null)
-                    ClientUtils.sendMessage("§eAlready emptied the vacuum recently!", false);
-                client.player.closeContainer();
-            } else {
-                if (client.player != null)
-                    ClientUtils.sendMessage("§cVacuum bag state unknown. Closing.", false);
-                client.player.closeContainer();
-            }
-        });
-
-        // Wait a bit for server response
-        MacroWorkerThread.sleep(1500);
-
-        // Close GUI if still open
-        client.execute(() -> {
-            if (client.screen != null && client.player != null) {
-                client.player.closeContainer();
-            }
-        });
-
-        MacroWorkerThread.sleep(300);
-
-        client.execute(() -> {
-            if (client.player != null)
-                ClientUtils.sendMessage("§aPest exchange complete!", false);
-        });
-
+        handlePesthunterGuiActions(client);
         isExchanging = false;
         return true;
     }
@@ -334,6 +280,9 @@ public class PestExchangeManager {
     }
 
     private static boolean isPesthunterGuiOpen(Minecraft client) {
+        if (!client.isSameThread()) {
+            return PestClientThread.call(client, () -> isPesthunterGuiOpen(client), false);
+        }
         if (client.screen instanceof AbstractContainerScreen<?> screen) {
             String title = screen.getTitle().getString().toLowerCase();
             return title.contains("pesthunter") || title.contains("phillip");
@@ -406,17 +355,28 @@ public class PestExchangeManager {
         return -1;
     }
 
-    private static void facePhillipForInteraction(Minecraft client, Entity phillip) {
-        rotateToPhillip(client, phillip);
+    private static Vec3 findPhillipTarget(Minecraft client) {
+        return PestClientThread.call(client, () -> {
+            Entity phillip = EntityUtils.findEntity(client, "Phillip");
+            return phillip == null ? null : phillip.getEyePosition();
+        }, null);
+    }
+
+    private static boolean hasPlayer(Minecraft client) {
+        return client != null && PestClientThread.call(client, () -> client.player != null, false);
+    }
+
+    private static void facePhillipForInteraction(Minecraft client, Vec3 phillipTarget) {
+        rotateToPhillip(client, phillipTarget);
         waitForRotationToFinish();
-        if (!isLookingAt(client, phillip, AetherConfig.PEST_EXCHANGE_FOV_RANGE.get())) {
+        if (!isLookingAt(client, phillipTarget, AetherConfig.PEST_EXCHANGE_FOV_RANGE.get())) {
             MacroWorkerThread.sleep(100);
         }
     }
 
-    private static void rotateToPhillip(Minecraft client, Entity phillip) {
+    private static void rotateToPhillip(Minecraft client, Vec3 phillipTarget) {
         client.execute(() -> RotationManager.initiateRotation(client,
-                new Vec3(phillip.getX(), phillip.getEyeY(), phillip.getZ()),
+                phillipTarget,
                 AetherConfig.ROTATION_TIME.get(),
                 AetherConfig.PEST_EXCHANGE_FOV_RANGE.get()));
         MacroWorkerThread.sleep(AetherConfig.ROTATION_TIME.get() + 50L);
@@ -429,12 +389,10 @@ public class PestExchangeManager {
         }
     }
 
-    private static boolean isLookingAt(Minecraft client, Entity entity, float tolerance) {
-        if (client.player == null) {
-            return false;
-        }
-        return RotationUtils.isLookingAt(client.player.getYRot(), client.player.getXRot(),
-                client.player.getEyePosition(), entity.getEyePosition(), tolerance);
+    private static boolean isLookingAt(Minecraft client, Vec3 target, float tolerance) {
+        return PestClientThread.call(client, () -> client.player != null
+                && RotationUtils.isLookingAt(client.player.getYRot(), client.player.getXRot(),
+                        client.player.getEyePosition(), target, tolerance), false);
     }
 
     private static String tooltipLinesToString(List<Component> lines) {

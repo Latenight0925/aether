@@ -14,7 +14,11 @@ public final class PestCompletionGuard {
     }
 
     public static boolean isInStartupGrace(long activatedAtMs) {
-        return System.currentTimeMillis() - activatedAtMs < STARTUP_FINISH_GRACE_MS;
+        return isInStartupGrace(activatedAtMs, System.currentTimeMillis());
+    }
+
+    static boolean isInStartupGrace(long activatedAtMs, long nowMs) {
+        return nowMs - activatedAtMs < STARTUP_FINISH_GRACE_MS;
     }
 
     public static boolean isStartupGraceElapsed(long activatedAtMs) {

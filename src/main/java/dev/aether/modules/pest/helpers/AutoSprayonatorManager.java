@@ -43,7 +43,8 @@ public final class AutoSprayonatorManager {
     private enum SprayResult {
         NONE,
         SUCCESS,
-        NO_MATERIAL
+        NO_MATERIAL,
+        INVALID_PLOT
     }
 
     public static void reset() {
@@ -109,6 +110,10 @@ public final class AutoSprayonatorManager {
 
         if (now - sprayNeededSinceMs < AetherConfig.AUTO_SPRAYONATOR_DETECT_TIME.get() * 1000L) return;
 
+        // Sprayonator sprays the plot we're standing on, and the Barn refuses
+        // sprays. Stay armed and fire once farming moves us off the Barn strip.
+        if ("Barn".equalsIgnoreCase(ClientUtils.getCurrentPlot())) return;
+
         running = true;
         cancelRequested = false;
         lastRunMs = now;
@@ -136,6 +141,14 @@ public final class AutoSprayonatorManager {
             return;
         }
 
+        // e.g. "You cannot spray a Barn plot!" - the server refuses some plots
+        // outright; without recognising this the run times out and re-triggers
+        // every cooldown forever.
+        if (lower.startsWith("you cannot spray")) {
+            pendingResult = SprayResult.INVALID_PLOT;
+            return;
+        }
+
         Matcher noMat = NO_MATERIAL_PATTERN.matcher(msg);
         if (noMat.find()) {
             missingMaterial = noMat.group(1).trim();
@@ -155,7 +168,7 @@ public final class AutoSprayonatorManager {
             }
 
             MacroStateManager.setCurrentState(MacroState.State.SPRAYING);
-            PestManager.isCleaningInProgress = true;
+            PestManager.setCleaningInProgress(true);
 
             msg(client, "\u00A7eUnsprayed plot detected. Pausing farming to spray...");
             client.execute(() -> dev.aether.macro.farming.FarmingMacroManager.disable(client));
@@ -181,7 +194,7 @@ public final class AutoSprayonatorManager {
                 client.execute(() -> dev.aether.macro.farming.FarmingMacroManager.enable(client, dev.aether.macro.farming.FarmingMacroManager.createMacroFromConfig()));
                 MacroStateManager.setCurrentState(MacroState.State.FARMING);
             }
-            PestManager.isCleaningInProgress = false;
+            PestManager.setCleaningInProgress(false);
             running = false;
             awaitingSprayResult = false;
             pendingResult = SprayResult.NONE;
@@ -209,6 +222,13 @@ public final class AutoSprayonatorManager {
         }
 
         if (pendingResult == SprayResult.SUCCESS) {
+            return true;
+        }
+
+        if (pendingResult == SprayResult.INVALID_PLOT) {
+            // Expected on the Barn strip; farming will carry us onto a sprayable
+            // plot and the armed detector re-fires there.
+            msg(client, "§eThis plot can't be sprayed. Will retry from a farm plot.");
             return true;
         }
 
@@ -270,7 +290,7 @@ public final class AutoSprayonatorManager {
         awaitingSprayResult = true;
 
         try {
-            ClientUtils.performUseClick();
+            PestClientThread.run(client, ClientUtils::performUseClick);
 
             long deadline = System.currentTimeMillis() + 5000L;
             while (System.currentTimeMillis() < deadline) {
@@ -327,7 +347,7 @@ public final class AutoSprayonatorManager {
         }
 
         pendingMaterialChange = null;
-        ClientUtils.performAttackClickDirect();
+        PestClientThread.run(client, ClientUtils::performAttackClickDirect);
 
         if (!waitForSprayonatorGui(client, 3000L) || shouldAbort()) {
             closeGui(client, guiDelay);
@@ -351,11 +371,13 @@ public final class AutoSprayonatorManager {
         while (System.currentTimeMillis() < deadline) {
             if (shouldAbort()) return false;
 
-            if (client.screen instanceof AbstractContainerScreen<?> screen) {
-                String title = TablistUtils.stripColors(screen.getTitle().getString()).toLowerCase();
-                if (title.contains("sprayonator")) {
-                    return true;
-                }
+            boolean open = PestClientThread.call(client,
+                    () -> client.screen instanceof AbstractContainerScreen<?> screen
+                            && TablistUtils.stripColors(screen.getTitle().getString())
+                                    .toLowerCase().contains("sprayonator"),
+                    false);
+            if (open) {
+                return true;
             }
 
             MacroWorkerThread.sleep(50);
@@ -364,6 +386,9 @@ public final class AutoSprayonatorManager {
     }
 
     private static boolean clickMaterialSlot(Minecraft client, String target) {
+        if (!client.isSameThread()) {
+            return PestClientThread.call(client, () -> clickMaterialSlot(client, target), false);
+        }
         if (!(client.screen instanceof AbstractContainerScreen<?> screen)) {
             return false;
         }
@@ -419,7 +444,7 @@ public final class AutoSprayonatorManager {
     }
 
     private static void clickSlot(Minecraft client, int slotIndex) {
-        client.execute(() -> {
+        PestClientThread.run(client, () -> {
             if (client.screen instanceof AbstractContainerScreen<?> screen) {
                 ClientUtils.performSlotClick(screen, slotIndex, 0, ContainerInput.PICKUP);
             }
@@ -427,12 +452,12 @@ public final class AutoSprayonatorManager {
     }
 
     private static void closeGui(Minecraft client, long guiDelay) {
-        if (client == null || client.screen == null) {
+        if (client == null) {
             return;
         }
 
-        client.execute(() -> {
-            if (client.player != null) {
+        PestClientThread.run(client, () -> {
+            if (client.player != null && client.screen != null) {
                 client.player.closeContainer();
             }
         });
@@ -466,6 +491,9 @@ public final class AutoSprayonatorManager {
     }
 
     private static String getCurrentMaterial(Minecraft client) {
+        if (client != null && !client.isSameThread()) {
+            return PestClientThread.call(client, () -> getCurrentMaterial(client), null);
+        }
         if (client.player == null) return null;
 
         ItemStack held = client.player.getMainHandItem();
@@ -475,6 +503,9 @@ public final class AutoSprayonatorManager {
     }
 
     private static String getSprayonatorMaterialFromHotbar(Minecraft client) {
+        if (client != null && !client.isSameThread()) {
+            return PestClientThread.call(client, () -> getSprayonatorMaterialFromHotbar(client), null);
+        }
         if (client.player == null) return null;
 
         for (int i = 0; i < 9; i++) {
@@ -524,27 +555,38 @@ public final class AutoSprayonatorManager {
 
     public static boolean holdSprayonator(Minecraft client) {
         if (client.player == null) return false;
+        int slot = PestClientThread.call(client, () -> findSprayonatorSlot(client), -1);
+        if (slot < 0) {
+            return false;
+        }
+        PestClientThread.run(client, () -> {
+            if (client.player != null) {
+                FailsafeManager.selectHotbarSlot(client, slot);
+            }
+        });
+        MacroWorkerThread.sleep(150);
+        return true;
+    }
 
+    private static int findSprayonatorSlot(Minecraft client) {
+        if (client.player == null) {
+            return -1;
+        }
         for (int i = 0; i < 9; i++) {
             ItemStack stack = client.player.getInventory().getItem(i);
-            if (stack == null || stack.isEmpty()) continue;
-
-            String clean = TablistUtils.stripColors(stack.getHoverName().getString()).toLowerCase();
-            if (clean.contains("sprayonator")) {
-                int slot = i;
-                client.execute(() -> {
-                    if (client.player != null) {
-                        FailsafeManager.selectHotbarSlot(client, slot);
-                    }
-                });
-                MacroWorkerThread.sleep(150);
-                return true;
+            if (stack != null && !stack.isEmpty()
+                    && TablistUtils.stripColors(stack.getHoverName().getString())
+                            .toLowerCase().contains("sprayonator")) {
+                return i;
             }
         }
-        return false;
+        return -1;
     }
 
     private static boolean tabListNeedsSpray(Minecraft client) {
+        if (client != null && !client.isSameThread()) {
+            return PestClientThread.call(client, () -> tabListNeedsSpray(client), false);
+        }
         for (String line : TablistUtils.getRawTabLines(client)) {
             String lower = line.toLowerCase();
             if (lower.contains("spray:") && lower.contains("none")) {

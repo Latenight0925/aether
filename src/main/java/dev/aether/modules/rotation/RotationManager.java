@@ -12,6 +12,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class RotationManager {
+    private static final float EXTERNAL_ROTATION_TOLERANCE_DEGREES = 5.0f;
+
     private static boolean isRotating = false;
     private static RotationUtils.Rotation startRot;
     private static RotationUtils.Rotation targetRot;
@@ -19,6 +21,9 @@ public class RotationManager {
     private static long rotationDuration;
     private static boolean applyTrackingNoise = false;
     private static double rotationGcd = Double.NaN;
+    private static float lastAppliedYaw = 0.0f;
+    private static float lastAppliedPitch = 0.0f;
+    private static boolean hasLastApplied = false;
 
     public static boolean isRotating() {
         return isRotating;
@@ -32,6 +37,7 @@ public class RotationManager {
         rotationDuration = 0L;
         applyTrackingNoise = false;
         rotationGcd = Double.NaN;
+        hasLastApplied = false;
     }
 
     public static void initiateRotation(Minecraft mc, Vec3 targetPos, long minDuration) {
@@ -46,6 +52,9 @@ public class RotationManager {
         if (isRotating)
             return;
 
+        if (FailsafeManager.shouldSuppressPestCleanerRotation(mc))
+            return;
+
         startRot = new RotationUtils.Rotation(mc.player.getYRot(), mc.player.getXRot());
         RotationUtils.Rotation end = RotationUtils.calculateLookAt(mc.player.getEyePosition(), targetPos);
         
@@ -54,7 +63,6 @@ public class RotationManager {
         }
 
         targetRot = RotationUtils.getAdjustedEnd(startRot, end);
-        FailsafeManager.expectRotation(targetRot.yaw, targetRot.pitch);
 
         long configDuration = (long) ConfigHelpers.getRandomizedDelay(AetherConfig.ROTATION_TIME.get());
         long dynamicDuration = computeDynamicDuration(startRot, targetRot);
@@ -62,6 +70,7 @@ public class RotationManager {
         rotationStartTime = System.currentTimeMillis();
         applyTrackingNoise = false;
         rotationGcd = computeGcd(mc);
+        hasLastApplied = false;
         isRotating = true;
     }
 
@@ -77,13 +86,14 @@ public class RotationManager {
     public static void rotateToYawPitch(Minecraft mc, float yaw, float pitch, long durationMs, boolean force) {
         if (mc.player == null) return;
         if (isRotating && !force) return;
+        if (FailsafeManager.shouldSuppressPestCleanerRotation(mc)) return;
         startRot = new RotationUtils.Rotation(mc.player.getYRot(), mc.player.getXRot());
         targetRot = RotationUtils.getAdjustedEnd(startRot, new RotationUtils.Rotation(yaw, pitch));
-        FailsafeManager.expectRotation(targetRot.yaw, targetRot.pitch);
         rotationDuration = Math.max(100, Math.max(durationMs, computeDynamicDuration(startRot, targetRot)));
         rotationStartTime = System.currentTimeMillis();
         applyTrackingNoise = false;
         rotationGcd = computeGcd(mc);
+        hasLastApplied = false;
         isRotating = true;
     }
 
@@ -93,14 +103,15 @@ public class RotationManager {
      */
     public static void forceRotation(Minecraft mc, Vec3 targetPos, long durationMs) {
         if (mc.player == null) return;
+        if (FailsafeManager.shouldSuppressPestCleanerRotation(mc)) return;
         startRot = new RotationUtils.Rotation(mc.player.getYRot(), mc.player.getXRot());
         targetRot = RotationUtils.calculateLookAt(mc.player.getEyePosition(), targetPos);
         targetRot = RotationUtils.getAdjustedEnd(startRot, targetRot);
-        FailsafeManager.expectRotation(targetRot.yaw, targetRot.pitch);
         rotationDuration = Math.max(1, durationMs);
         rotationStartTime = System.currentTimeMillis();
         applyTrackingNoise = true;
         rotationGcd = computeGcd(mc);
+        hasLastApplied = false;
         isRotating = true;
     }
 
@@ -110,6 +121,12 @@ public class RotationManager {
             return;
 
         if (isRotating && startRot != null && targetRot != null) {
+            if (hasExternalRotation(mc)) {
+                FailsafeManager.reportExternalRotation();
+                cancelRotation();
+                return;
+            }
+
             long currentTime = System.currentTimeMillis();
             long elapsed = currentTime - rotationStartTime;
             float t = (float) elapsed / (float) rotationDuration;
@@ -150,8 +167,22 @@ public class RotationManager {
             mc.player.setXRot(currentPitch);
             mc.player.yRotO = currentYaw;
             mc.player.xRotO = currentPitch;
+            lastAppliedYaw = currentYaw;
+            lastAppliedPitch = currentPitch;
+            hasLastApplied = true;
             FailsafeManager.expectRotation(currentYaw, currentPitch);
         }
+    }
+
+    private static boolean hasExternalRotation(Minecraft mc) {
+        if (!hasLastApplied) {
+            return false;
+        }
+
+        float yawDrift = Math.abs(Mth.wrapDegrees(mc.player.getYRot() - lastAppliedYaw));
+        float pitchDrift = Math.abs(mc.player.getXRot() - lastAppliedPitch);
+        return yawDrift > EXTERNAL_ROTATION_TOLERANCE_DEGREES
+                || pitchDrift > EXTERNAL_ROTATION_TOLERANCE_DEGREES;
     }
 
     /**

@@ -194,8 +194,8 @@ public class AutoSellManager {
 
     private static boolean isPriorityEventActive(Minecraft client, boolean ignoreVisitors) {
         return LoadoutManager.isSwappingLoadout
-                || PestManager.isCleaningInProgress
-                || PestPrepSwapManager.isPrepSwapping
+                || PestManager.isCleaningInProgress()
+                || PestPrepSwapManager.isPrepSwapping()
                 || (!ignoreVisitors && dev.aether.modules.visitor.VisitorsMacro.isRunning)
                 || BookCombineManager.isCombining
                 || BookCombineManager.isPreparingToCombine

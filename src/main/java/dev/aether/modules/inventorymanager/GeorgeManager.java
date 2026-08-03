@@ -204,8 +204,8 @@ public class GeorgeManager {
         if (state != MacroState.State.FARMING && state != MacroState.State.GEORGE) {
             return true;
         }
-        return PestManager.isCleaningInProgress
-                || PestPrepSwapManager.prepSwappedForCurrentPestCycle
+        return PestManager.isCleaningInProgress()
+                || PestPrepSwapManager.wasPrepSwappedForCurrentCycle()
                 || BookCombineManager.isCombining
                 || BookCombineManager.isPreparingToCombine
                 || JunkManager.isDropping
